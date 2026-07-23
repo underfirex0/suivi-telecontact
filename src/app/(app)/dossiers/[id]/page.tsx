@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { format } from "date-fns";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
@@ -134,7 +135,7 @@ export default function DossierDetailPage() {
             <DetailItem label="Date BC signé" value={formatDate(dossier.date_bc)} mono />
             <DetailItem
               label="Date référencement (estimée)"
-              value={formatDate(dateReferencement(dossier.date_bc).toISOString().slice(0, 10))}
+              value={formatDate(format(dateReferencement(dossier.date_bc), "yyyy-MM-dd"))}
               mono
             />
             <div>
