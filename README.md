@@ -112,6 +112,70 @@ modifie un dossier, vous le voyez changer sans recharger la page (grâce à Supa
 
 ---
 
+## Digest email quotidien (optionnel)
+
+Une fois activé, tous les comptes reçoivent chaque matin un email listant les
+dossiers en retard — QC en retard, relances, suivi juridique — avec un lien
+direct vers chaque dossier. Si rien n'est en retard, un email de confirmation
+("Tout est à jour ✅") est envoyé quand même, pour être sûr que le système
+tourne bien.
+
+### Mise en place (10 minutes)
+
+1. **Créer un compte [Resend](https://resend.com)** (gratuit, envoi d'emails transactionnels).
+   - Dans **API Keys**, créer une clé → copier la valeur (visible une seule fois).
+   - Dans **Domains**, ajouter et vérifier votre propre domaine d'entreprise
+     (quelques enregistrements DNS à ajouter chez votre registrar — Resend
+     guide pas à pas). **Sans domaine vérifié, Resend n'autorisera l'envoi
+     qu'à votre propre adresse de test**, pas à toute l'équipe — donc cette
+     étape est nécessaire pour un vrai usage en production.
+
+2. **Récupérer la clé "service role" de Supabase** : Project Settings → API →
+   `service_role` key (⚠️ différente de la clé `anon` déjà utilisée — celle-ci
+   est un secret serveur, ne jamais l'exposer côté client).
+
+3. **Générer un secret aléatoire** pour protéger la route du cron, par exemple :
+   ```bash
+   openssl rand -hex 32
+   ```
+
+4. **Ajouter ces variables d'environnement dans Vercel** (Project Settings → Environment Variables) :
+
+   | Variable | Valeur |
+   |---|---|
+   | `SUPABASE_SERVICE_ROLE_KEY` | la clé service_role de l'étape 2 |
+   | `RESEND_API_KEY` | la clé de l'étape 1 |
+   | `RESEND_FROM_EMAIL` | ex: `suivi@votreentreprise.com` (doit correspondre au domaine vérifié) |
+   | `CRON_SECRET` | le secret généré à l'étape 3 |
+   | `NEXT_PUBLIC_APP_URL` | l'URL de votre app, ex: `https://suivi-telecontact.vercel.app` |
+
+5. **Redéployer** (Vercel redéploie automatiquement dès qu'une variable d'environnement change, ou déclenchez un redeploy manuel).
+
+6. C'est tout — `vercel.json` programme déjà l'envoi automatique chaque jour à 6h30 UTC (~7h30 heure du Maroc). Modifiable dans `vercel.json` si besoin (format cron standard).
+
+### Tester manuellement avant de faire confiance au planning automatique
+
+```bash
+curl https://votre-app.vercel.app/api/cron/digest \
+  -H "Authorization: Bearer VOTRE_CRON_SECRET"
+```
+
+Réponse attendue : `{"sent":true,"alertCount":X,"recipientCount":Y}`. Vérifiez
+ensuite que l'email est bien arrivé dans les boîtes de l'équipe (pensez aux
+spams lors du tout premier test).
+
+### Limites connues
+
+- Sur le plan Vercel gratuit (Hobby), les cron jobs peuvent s'exécuter avec
+  jusqu'à une heure de décalage par rapport à l'heure programmée — normal,
+  pas un bug.
+- Sans domaine vérifié sur Resend, les emails n'arriveront qu'à l'adresse du
+  compte Resend lui-même, pas à toute l'équipe.
+- Le digest est envoyé à **tous** les comptes existants, sans possibilité de
+  désabonnement individuel pour l'instant.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,
