@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { formatDate, formatMontant } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import type { Dossier, Profile } from "@/lib/types";
 
 export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; profiles: Profile[] }) {
   const router = useRouter();
   const [etapeFilter, setEtapeFilter] = useState("all");
   const [alerteFilter, setAlerteFilter] = useState("all");
+  const now = useNow();
 
   const profileMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -20,12 +22,12 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
   }, [profiles]);
 
   const analyzed = useMemo(() => {
-    let list = dossiers.map((d) => ({ d, a: analyzeDossier(d) }));
+    let list = dossiers.map((d) => ({ d, a: analyzeDossier(d, now) }));
     if (etapeFilter !== "all") list = list.filter((x) => x.d.etape === etapeFilter);
     if (alerteFilter === "late") list = list.filter((x) => x.a.alert);
     list.sort((x, y) => y.a.severity - x.a.severity);
     return list;
-  }, [dossiers, etapeFilter, alerteFilter]);
+  }, [dossiers, etapeFilter, alerteFilter, now]);
 
   return (
     <div>

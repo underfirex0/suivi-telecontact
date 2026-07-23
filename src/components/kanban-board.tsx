@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { Badge, Dot } from "@/components/ui/badge";
 import { analyzeDossier, KANBAN_COLUMNS } from "@/lib/dossier-logic";
+import { useNow } from "@/lib/use-now";
 import type { Dossier } from "@/lib/types";
 
 export function KanbanBoard({ dossiers }: { dossiers: Dossier[] }) {
   const router = useRouter();
-  const analyzed = dossiers.map((d) => ({ d, a: analyzeDossier(d) }));
+  const now = useNow();
+  const analyzed = dossiers.map((d) => ({ d, a: analyzeDossier(d, now) }));
 
   return (
     <div className="flex gap-3.5 overflow-x-auto pb-3">

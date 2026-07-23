@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { todayISO } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 
 export default function DashboardPage() {
   const { dossiers, loading } = useDossiers();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const now = useNow();
 
   const filtered = useMemo(() => {
     if (!search) return dossiers;
@@ -23,8 +25,8 @@ export default function DashboardPage() {
   }, [dossiers, search]);
 
   const analyzed = useMemo(
-    () => filtered.map((d) => ({ d, a: analyzeDossier(d) })),
-    [filtered]
+    () => filtered.map((d) => ({ d, a: analyzeDossier(d, now) })),
+    [filtered, now]
   );
 
   const active = filtered.filter((d) => d.etape !== "paye");

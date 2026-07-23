@@ -13,6 +13,7 @@ import { FacturerDialog } from "@/components/facturer-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, dateReferencement } from "@/lib/dossier-logic";
 import { formatDate, formatMontant } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import type { HistoriqueEntry } from "@/lib/types";
 
 export default function DossierDetailPage() {
@@ -41,6 +42,7 @@ export default function DossierDetailPage() {
   const [facturerOpen, setFacturerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const now = useNow();
 
   useEffect(() => {
     if (dossier) {
@@ -83,7 +85,7 @@ export default function DossierDetailPage() {
     );
   }
 
-  const a = analyzeDossier(dossier);
+  const a = analyzeDossier(dossier, now);
 
   async function handleSave() {
     setSaving(true);
