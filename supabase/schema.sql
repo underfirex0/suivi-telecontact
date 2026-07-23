@@ -52,6 +52,9 @@ create table if not exists public.dossiers (
   juridique_actif boolean not null default false,
   juridique_notes text,
 
+  archived_at timestamptz,
+  archived_by uuid references public.profiles(id) on delete set null,
+
   notes text,
   operateur_id uuid references public.profiles(id) on delete set null,
   created_by uuid references public.profiles(id) on delete set null,

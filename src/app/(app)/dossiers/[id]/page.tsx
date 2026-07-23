@@ -2,17 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Archive, RotateCcw, Undo2 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { FacturerDialog } from "@/components/facturer-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, dateReferencement } from "@/lib/dossier-logic";
-import { formatDate, formatMontant } from "@/lib/utils";
+import { formatMontant } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import type { HistoriqueEntry } from "@/lib/types";
 
@@ -24,17 +25,27 @@ export default function DossierDetailPage() {
     profiles,
     loading,
     updateDossier,
-    deleteDossier,
+    archiveDossier,
+    restoreDossier,
     markQcOk,
     markQcCorrection,
     markFacture,
     markPaye,
     toggleJuridique,
+    revertQcCorrection,
+    revertValidation,
+    revertFacturation,
+    revertPaiement,
     fetchHistorique,
   } = useDossiers();
 
   const dossier = dossiers.find((d) => d.id === params.id);
 
+  const [clientNom, setClientNom] = useState("");
+  const [offre, setOffre] = useState("");
+  const [contact, setContact] = useState("");
+  const [commercial, setCommercial] = useState("");
+  const [dateBc, setDateBc] = useState("");
   const [notes, setNotes] = useState("");
   const [juridiqueNotes, setJuridiqueNotes] = useState("");
   const [operateurId, setOperateurId] = useState("");
@@ -46,6 +57,11 @@ export default function DossierDetailPage() {
 
   useEffect(() => {
     if (dossier) {
+      setClientNom(dossier.client_nom ?? "");
+      setOffre(dossier.offre ?? "");
+      setContact(dossier.contact_client ?? "");
+      setCommercial(dossier.commercial ?? "");
+      setDateBc(dossier.date_bc ?? "");
       setNotes(dossier.notes ?? "");
       setJuridiqueNotes(dossier.juridique_notes ?? "");
       setOperateurId(dossier.operateur_id ?? "");
@@ -86,20 +102,39 @@ export default function DossierDetailPage() {
   }
 
   const a = analyzeDossier(dossier, now);
+  const isArchived = !!dossier.archived_at;
 
   async function handleSave() {
+    if (!clientNom.trim()) {
+      alert("Le nom du client est requis.");
+      return;
+    }
     setSaving(true);
-    await updateDossier(dossier!.id, {
-      notes: notes.trim() || null,
-      operateur_id: operateurId || null,
-      juridique_notes: juridiqueNotes.trim() || null,
-    });
+    await updateDossier(
+      dossier!.id,
+      {
+        client_nom: clientNom.trim(),
+        offre: offre.trim() || null,
+        contact_client: contact.trim() || null,
+        commercial: commercial.trim() || null,
+        date_bc: dateBc,
+        notes: notes.trim() || null,
+        operateur_id: operateurId || null,
+        juridique_notes: juridiqueNotes.trim() || null,
+      },
+      "Informations du dossier modifiées."
+    );
     setSaving(false);
   }
 
-  async function handleDelete() {
-    if (!confirm(`Supprimer définitivement le dossier de "${dossier!.client_nom}" ? Cette action est irréversible.`)) return;
-    await deleteDossier(dossier!.id);
+  async function handleArchive() {
+    if (
+      !confirm(
+        `Archiver le dossier de "${dossier!.client_nom}" ? Il disparaîtra des vues actives mais restera consultable et restaurable dans les archives.`
+      )
+    )
+      return;
+    await archiveDossier(dossier!.id);
     router.push("/dossiers");
   }
 
@@ -121,6 +156,23 @@ export default function DossierDetailPage() {
           Retour aux dossiers
         </button>
 
+        {isArchived && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-warn/30 bg-warn-tint px-4 py-3">
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-warn">
+              <Archive size={15} />
+              Ce dossier est archivé.
+            </div>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => runAction(() => restoreDossier(dossier.id))}
+            >
+              <RotateCcw size={14} />
+              Restaurer
+            </Button>
+          </div>
+        )}
+
         <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
           <div className="mb-5 flex flex-wrap items-center gap-2.5">
             <Badge color={a.color}>{a.label}</Badge>
@@ -128,21 +180,26 @@ export default function DossierDetailPage() {
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4">
-            <DetailItem label="Offre" value={dossier.offre || "—"} />
-            <DetailItem label="Contact client" value={dossier.contact_client || "—"} />
-            <DetailItem label="Commercial" value={dossier.commercial || "—"} />
-            <DetailItem label="Date BC signé" value={formatDate(dossier.date_bc)} mono />
-            <DetailItem
-              label={dossier.etape === "qc" && dateReferencement(dossier.created_at) > now ? "Référencement prévu" : "Référencé le"}
-              value={dateReferencement(dossier.created_at).toLocaleString("fr-FR", {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-              mono
-            />
+            <div className="col-span-2">
+              <Label htmlFor="d-client">Nom du client *</Label>
+              <Input id="d-client" value={clientNom} onChange={(e) => setClientNom(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="d-offre">Offre / référencement</Label>
+              <Input id="d-offre" value={offre} onChange={(e) => setOffre(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="d-contact">Contact client</Label>
+              <Input id="d-contact" value={contact} onChange={(e) => setContact(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="d-commercial">Commercial</Label>
+              <Input id="d-commercial" value={commercial} onChange={(e) => setCommercial(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="d-datebc">Date BC signé</Label>
+              <Input id="d-datebc" type="date" value={dateBc} onChange={(e) => setDateBc(e.target.value)} />
+            </div>
             <div>
               <Label>Opérateur assigné</Label>
               <Select value={operateurId} onValueChange={setOperateurId}>
@@ -158,11 +215,26 @@ export default function DossierDetailPage() {
                 </SelectContent>
               </Select>
             </div>
-            {dossier.date_facture && <DetailItem label="Date facture" value={formatDate(dossier.date_facture)} mono />}
+            <div>
+              <Label>{dateReferencement(dossier.created_at) > now ? "Référencement prévu" : "Référencé le"}</Label>
+              <div className="pt-1.5 font-mono text-[13.5px] font-medium text-ink">
+                {dateReferencement(dossier.created_at).toLocaleString("fr-FR", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
+            </div>
             {dossier.montant_facture != null && (
-              <DetailItem label="Montant" value={formatMontant(dossier.montant_facture)} mono />
+              <div>
+                <Label>Montant facturé</Label>
+                <div className="pt-1.5 font-mono text-[13.5px] font-medium text-ink">
+                  {formatMontant(dossier.montant_facture)}
+                </div>
+              </div>
             )}
-            {dossier.date_paiement && <DetailItem label="Date paiement" value={formatDate(dossier.date_paiement)} mono />}
           </div>
 
           {dossier.etape === "paiement" && (
@@ -182,8 +254,8 @@ export default function DossierDetailPage() {
             <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Remarques..." />
           </div>
 
-          <div className="mb-6 flex flex-wrap gap-2">
-            {dossier.etape === "qc" && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {dossier.etape === "qc" && dossier.qc_sous_statut !== "a_corriger" && (
               <>
                 <Button variant="success" disabled={busy} onClick={() => runAction(() => markQcOk(dossier.id))}>
                   ✓ QC OK — Valider
@@ -193,8 +265,33 @@ export default function DossierDetailPage() {
                 </Button>
               </>
             )}
+            {dossier.etape === "qc" && dossier.qc_sous_statut === "a_corriger" && (
+              <>
+                <Button variant="success" disabled={busy} onClick={() => runAction(() => markQcOk(dossier.id))}>
+                  ✓ QC OK — Valider
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => runAction(() => revertQcCorrection(dossier.id))}
+                >
+                  <Undo2 size={14} />
+                  Annuler la demande de correction
+                </Button>
+              </>
+            )}
             {dossier.etape === "facturation" && (
-              <Button onClick={() => setFacturerOpen(true)}>Marquer facturé</Button>
+              <>
+                <Button onClick={() => setFacturerOpen(true)}>Marquer facturé</Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => runAction(() => revertValidation(dossier.id))}
+                >
+                  <Undo2 size={14} />
+                  Annuler la validation (retour en QC)
+                </Button>
+              </>
             )}
             {dossier.etape === "paiement" && (
               <>
@@ -208,12 +305,32 @@ export default function DossierDetailPage() {
                 >
                   {dossier.juridique_actif ? "Retirer du suivi juridique" : "Activer suivi juridique manuellement"}
                 </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => runAction(() => revertFacturation(dossier.id))}
+                >
+                  <Undo2 size={14} />
+                  Annuler la facturation
+                </Button>
               </>
             )}
-            {dossier.etape === "paye" && <Badge color="success">Dossier clôturé</Badge>}
+            {dossier.etape === "paye" && (
+              <>
+                <Badge color="success">Dossier clôturé</Badge>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => runAction(() => revertPaiement(dossier.id))}
+                >
+                  <Undo2 size={14} />
+                  Annuler le paiement
+                </Button>
+              </>
+            )}
           </div>
 
-          <div className="mb-5 h-px bg-border" />
+          <div className="mb-5 mt-4 h-px bg-border" />
 
           <div className="mb-3 font-display text-[14px] font-semibold text-ink">Historique</div>
           <div className="flex flex-col">
@@ -233,10 +350,14 @@ export default function DossierDetailPage() {
           </div>
 
           <div className="mt-6 flex items-center justify-between border-t border-border pt-5">
-            <Button variant="danger" onClick={handleDelete}>
-              <Trash2 size={14} />
-              Supprimer le dossier
-            </Button>
+            {!isArchived ? (
+              <Button variant="danger" onClick={handleArchive}>
+                <Archive size={14} />
+                Archiver le dossier
+              </Button>
+            ) : (
+              <div />
+            )}
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </Button>
@@ -250,14 +371,5 @@ export default function DossierDetailPage() {
         onConfirm={(date, montant) => markFacture(dossier.id, date, montant)}
       />
     </>
-  );
-}
-
-function DetailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div>
-      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-2">{label}</div>
-      <div className={`text-[13.5px] font-medium text-ink ${mono ? "font-mono" : ""}`}>{value}</div>
-    </div>
   );
 }

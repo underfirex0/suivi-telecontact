@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { formatDate, formatMontant } from "@/lib/utils";
+import { exportDossiersToCsv } from "@/lib/export-csv";
 import { useNow } from "@/lib/use-now";
 import type { Dossier, Profile } from "@/lib/types";
 
@@ -31,28 +34,37 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
 
   return (
     <div>
-      <div className="mb-3.5 flex gap-2.5">
-        <Select value={etapeFilter} onValueChange={setEtapeFilter}>
-          <SelectTrigger className="w-[190px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toutes les étapes</SelectItem>
-            <SelectItem value="qc">Contrôle qualité</SelectItem>
-            <SelectItem value="facturation">À facturer</SelectItem>
-            <SelectItem value="paiement">Paiement</SelectItem>
-            <SelectItem value="paye">Payé</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={alerteFilter} onValueChange={setAlerteFilter}>
-          <SelectTrigger className="w-[190px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Tous les statuts</SelectItem>
-            <SelectItem value="late">En retard uniquement</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="mb-3.5 flex items-center justify-between gap-2.5">
+        <div className="flex gap-2.5">
+          <Select value={etapeFilter} onValueChange={setEtapeFilter}>
+            <SelectTrigger className="w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les étapes</SelectItem>
+              <SelectItem value="qc">Contrôle qualité</SelectItem>
+              <SelectItem value="facturation">À facturer</SelectItem>
+              <SelectItem value="paiement">Paiement</SelectItem>
+              <SelectItem value="paye">Payé</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={alerteFilter} onValueChange={setAlerteFilter}>
+            <SelectTrigger className="w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les statuts</SelectItem>
+              <SelectItem value="late">En retard uniquement</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          variant="secondary"
+          onClick={() => exportDossiersToCsv(analyzed.map((x) => x.d), profiles)}
+        >
+          <Download size={14} />
+          Exporter CSV ({analyzed.length})
+        </Button>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">

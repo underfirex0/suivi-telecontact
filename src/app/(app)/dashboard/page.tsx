@@ -11,7 +11,8 @@ import { todayISO } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 
 export default function DashboardPage() {
-  const { dossiers, loading } = useDossiers();
+  const { dossiers: allDossiers, loading } = useDossiers();
+  const dossiers = useMemo(() => allDossiers.filter((d) => !d.archived_at), [allDossiers]);
   const router = useRouter();
   const [search, setSearch] = useState("");
   const now = useNow();

@@ -20,12 +20,17 @@ interface DossiersContextValue {
   loading: boolean;
   createDossier: (input: Partial<Dossier>) => Promise<string | null>;
   updateDossier: (id: string, patch: Partial<Dossier>, historiqueTexte?: string) => Promise<void>;
-  deleteDossier: (id: string) => Promise<void>;
+  archiveDossier: (id: string) => Promise<void>;
+  restoreDossier: (id: string) => Promise<void>;
   markQcOk: (id: string) => Promise<void>;
   markQcCorrection: (id: string) => Promise<void>;
   markFacture: (id: string, date: string, montant: number | null) => Promise<void>;
   markPaye: (id: string) => Promise<void>;
   toggleJuridique: (id: string) => Promise<void>;
+  revertQcCorrection: (id: string) => Promise<void>;
+  revertValidation: (id: string) => Promise<void>;
+  revertFacturation: (id: string) => Promise<void>;
+  revertPaiement: (id: string) => Promise<void>;
   fetchHistorique: (dossierId: string) => Promise<HistoriqueEntry[]>;
   signOut: () => Promise<void>;
 }
@@ -159,12 +164,29 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [supabase, addHistorique, loadAll]
   );
 
-  const deleteDossier = useCallback(
+  const archiveDossier = useCallback(
     async (id: string) => {
-      await supabase.from("dossiers").delete().eq("id", id);
-      setDossiers((prev) => prev.filter((d) => d.id !== id));
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await updateDossier(
+        id,
+        { archived_at: new Date().toISOString(), archived_by: user?.id ?? null },
+        "Dossier archivé (supprimé)."
+      );
     },
-    [supabase]
+    [supabase, updateDossier]
+  );
+
+  const restoreDossier = useCallback(
+    async (id: string) => {
+      await updateDossier(
+        id,
+        { archived_at: null, archived_by: null },
+        "Dossier restauré depuis les archives."
+      );
+    },
+    [updateDossier]
   );
 
   const markQcOk = useCallback(
@@ -221,6 +243,48 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [dossiers, updateDossier]
   );
 
+  // ---- Annulations (corriger une erreur de manipulation, sans supprimer le dossier) ----
+
+  const revertQcCorrection = useCallback(
+    (id: string) =>
+      updateDossier(
+        id,
+        { qc_sous_statut: "attente" },
+        "Annulation : la demande de correction a été retirée."
+      ),
+    [updateDossier]
+  );
+
+  const revertValidation = useCallback(
+    (id: string) =>
+      updateDossier(
+        id,
+        { etape: "qc", qc_sous_statut: "attente", date_qc: null },
+        "Annulation : retour au contrôle qualité (validation annulée)."
+      ),
+    [updateDossier]
+  );
+
+  const revertFacturation = useCallback(
+    (id: string) =>
+      updateDossier(
+        id,
+        { etape: "facturation", date_facture: null, montant_facture: null },
+        "Annulation : la facturation a été annulée."
+      ),
+    [updateDossier]
+  );
+
+  const revertPaiement = useCallback(
+    (id: string) =>
+      updateDossier(
+        id,
+        { etape: "paiement", date_paiement: null },
+        "Annulation : le paiement a été annulé."
+      ),
+    [updateDossier]
+  );
+
   const fetchHistorique = useCallback(
     async (dossierId: string) => {
       const { data } = await supabase
@@ -246,12 +310,17 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     loading,
     createDossier,
     updateDossier,
-    deleteDossier,
+    archiveDossier,
+    restoreDossier,
     markQcOk,
     markQcCorrection,
     markFacture,
     markPaye,
     toggleJuridique,
+    revertQcCorrection,
+    revertValidation,
+    revertFacturation,
+    revertPaiement,
     fetchHistorique,
     signOut,
   };

@@ -26,6 +26,9 @@ export interface Dossier {
   juridique_actif: boolean;
   juridique_notes: string | null;
 
+  archived_at: string | null;
+  archived_by: string | null;
+
   notes: string | null;
   operateur_id: string | null;
   created_by: string | null;

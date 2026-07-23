@@ -5,7 +5,8 @@ import { initials } from "@/lib/utils";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 
 export default function OperateursPage() {
-  const { profiles, dossiers, loading } = useDossiers();
+  const { profiles, dossiers: allDossiers, loading } = useDossiers();
+  const dossiers = allDossiers.filter((d) => !d.archived_at);
 
   return (
     <>
