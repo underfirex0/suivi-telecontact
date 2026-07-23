@@ -23,6 +23,24 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     const dateRef = dateReferencement(d.date_bc);
     const referenced = now >= dateRef;
 
+    const daysSinceRef = referenced ? differenceInCalendarDays(now, dateRef) : 0;
+    const late = referenced && daysSinceRef >= SEUIL_QC_RETARD_JOURS;
+
+    if (d.qc_sous_statut === "a_corriger") {
+      return {
+        label: "À corriger",
+        sub: !referenced
+          ? "Référencement en cours · en attente de nouvelle vérification"
+          : late
+          ? `En retard · ${daysSinceRef}j depuis référencement`
+          : "Corrections en cours",
+        color: late ? "danger" : "warning",
+        alert: late,
+        severity: late ? 3 : 1,
+        columnKey: "a_corriger",
+      };
+    }
+
     if (!referenced) {
       const hoursLeft = Math.max(0, Math.ceil(differenceInHours(dateRef, now)));
       return {
@@ -32,22 +50,6 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         alert: false,
         severity: 0,
         columnKey: "qc",
-      };
-    }
-
-    const daysSinceRef = differenceInCalendarDays(now, dateRef);
-    const late = daysSinceRef >= SEUIL_QC_RETARD_JOURS;
-
-    if (d.qc_sous_statut === "a_corriger") {
-      return {
-        label: "À corriger",
-        sub: late
-          ? `En retard · ${daysSinceRef}j depuis référencement`
-          : "Corrections en cours",
-        color: late ? "danger" : "warning",
-        alert: late,
-        severity: late ? 3 : 1,
-        columnKey: "a_corriger",
       };
     }
 
