@@ -5,6 +5,8 @@ import { buildDigestEmailHtml } from "@/lib/email-digest";
 import type { Dossier } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export async function GET(request: Request) {
   // Sécurité : seul un appel connaissant CRON_SECRET peut déclencher l'envoi.
@@ -57,6 +59,7 @@ export async function GET(request: Request) {
 
   const resendRes = await fetch("https://api.resend.com/emails", {
     method: "POST",
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       "Content-Type": "application/json",
