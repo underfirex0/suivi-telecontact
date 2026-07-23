@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { format } from "date-fns";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
@@ -134,8 +133,14 @@ export default function DossierDetailPage() {
             <DetailItem label="Commercial" value={dossier.commercial || "—"} />
             <DetailItem label="Date BC signé" value={formatDate(dossier.date_bc)} mono />
             <DetailItem
-              label="Date référencement (estimée)"
-              value={formatDate(format(dateReferencement(dossier.date_bc), "yyyy-MM-dd"))}
+              label={dossier.etape === "qc" && dateReferencement(dossier.created_at) > now ? "Référencement prévu" : "Référencé le"}
+              value={dateReferencement(dossier.created_at).toLocaleString("fr-FR", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
               mono
             />
             <div>

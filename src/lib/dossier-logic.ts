@@ -1,9 +1,11 @@
-import { differenceInCalendarDays, differenceInHours, addDays, parseISO } from "date-fns";
+import { differenceInCalendarDays, differenceInMinutes, parseISO, addHours } from "date-fns";
 import type { Dossier, DossierStatus } from "./types";
 
 /**
  * Seuils métier (définis avec DG) :
- * - Référencement : effectif 24h après réception du BC signé
+ * - Référencement : effectif 24h EXACTES après la création du dossier
+ *   (moment de la réception du BC signé dans le système), pas au prochain
+ *   minuit calendaire — c'est un vrai délai de 24h, pas un jour calendaire.
  * - QC en retard : 2 jours après le référencement sans QC faite
  * - Relance niveau 1 : 15 jours après facturation sans paiement
  * - Relance niveau 2 : 25 jours après facturation sans paiement
@@ -14,13 +16,14 @@ export const SEUIL_RELANCE_1_JOURS = 15;
 export const SEUIL_RELANCE_2_JOURS = 25;
 export const SEUIL_JURIDIQUE_JOURS = 90;
 
-export function dateReferencement(dateBc: string): Date {
-  return addDays(parseISO(dateBc), 1);
+/** Référencement = 24h exactes après la création du dossier (created_at). */
+export function dateReferencement(createdAt: string): Date {
+  return addHours(parseISO(createdAt), 24);
 }
 
 export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatus {
   if (d.etape === "qc") {
-    const dateRef = dateReferencement(d.date_bc);
+    const dateRef = dateReferencement(d.created_at);
     const referenced = now >= dateRef;
 
     const daysSinceRef = referenced ? differenceInCalendarDays(now, dateRef) : 0;
@@ -42,10 +45,12 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     }
 
     if (!referenced) {
-      const hoursLeft = Math.max(0, Math.ceil(differenceInHours(dateRef, now)));
+      const minutesLeft = Math.max(0, differenceInMinutes(dateRef, now));
+      const h = Math.floor(minutesLeft / 60);
+      const m = minutesLeft % 60;
       return {
         label: "En attente de référencement",
-        sub: `${hoursLeft}h restantes`,
+        sub: `${h}h${String(m).padStart(2, "0")} restantes`,
         color: "neutral",
         alert: false,
         severity: 0,
