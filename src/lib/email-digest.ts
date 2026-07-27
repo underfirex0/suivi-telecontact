@@ -1,4 +1,5 @@
 import type { DossierStatus } from "./types";
+import { STATUS_HEX } from "./status-colors";
 
 interface AlertRow {
   clientNom: string;
@@ -7,16 +8,8 @@ interface AlertRow {
   dossierId: string;
 }
 
-const HEX: Record<DossierStatus["color"], string> = {
-  neutral: "#6B7280",
-  warning: "#C2790A",
-  danger: "#C0392B",
-  juridique: "#5B3A8E",
-  success: "#1F8A55",
-};
-
 function row(a: AlertRow, appUrl: string): string {
-  const color = HEX[a.status.color];
+  const color = STATUS_HEX[a.status.color];
   const link = appUrl ? `${appUrl}/dossiers/${a.dossierId}` : "#";
   return `
     <tr>

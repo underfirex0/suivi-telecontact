@@ -8,6 +8,7 @@ const colorClasses: Record<StatusColor, string> = {
   danger: "bg-danger-tint text-danger",
   juridique: "bg-juridique-tint text-juridique",
   success: "bg-success-tint text-success",
+  perte: "bg-[#F3E7E4] text-[#7A2E1F]",
 };
 
 export function Badge({
@@ -39,6 +40,7 @@ export function Dot({ color = "neutral" }: { color?: StatusColor }) {
     danger: "bg-danger",
     juridique: "bg-juridique",
     success: "bg-success",
+    perte: "bg-[#7A2E1F]",
   };
   return <span className={cn("h-2 w-2 rounded-full flex-shrink-0", dotClasses[color])} />;
 }

@@ -47,7 +47,14 @@ create table if not exists public.dossiers (
 
   date_facture date,
   montant_facture numeric(12,2),
+  montant_recu numeric(12,2) not null default 0,
   date_paiement date,
+
+  date_debut_visibilite date,
+  date_fin_visibilite date,
+
+  numero_facture text,
+  ville text,
 
   juridique_actif boolean not null default false,
   juridique_notes text,
@@ -93,6 +100,66 @@ create table if not exists public.historique (
 
 create index if not exists historique_dossier_idx on public.historique(dossier_id);
 
+-- ---------- PAIEMENTS (ledger — plusieurs paiements partiels par dossier) ----------
+create table if not exists public.paiements (
+  id uuid primary key default gen_random_uuid(),
+  dossier_id uuid not null references public.dossiers(id) on delete cascade,
+  montant numeric(12,2) not null,
+  date_paiement date not null,
+  note text,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists paiements_dossier_idx on public.paiements(dossier_id);
+
+-- Recalcule automatiquement dossiers.montant_recu à chaque ajout/modif/suppression
+-- de paiement, et fait passer le dossier en "payé" dès que le montant reçu couvre
+-- le montant facturé (et inversement si un paiement est corrigé/supprimé).
+create or replace function public.recompute_montant_recu()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_dossier_id uuid;
+  v_total numeric(12,2);
+  v_facture numeric(12,2);
+  v_etape text;
+begin
+  v_dossier_id := coalesce(new.dossier_id, old.dossier_id);
+
+  select coalesce(sum(montant), 0) into v_total
+  from public.paiements
+  where dossier_id = v_dossier_id;
+
+  select montant_facture, etape into v_facture, v_etape
+  from public.dossiers
+  where id = v_dossier_id;
+
+  update public.dossiers
+  set
+    montant_recu = v_total,
+    etape = case
+      when v_facture is not null and v_total >= v_facture and v_etape = 'paiement' then 'paye'
+      when v_facture is not null and v_total < v_facture and v_etape = 'paye' then 'paiement'
+      else v_etape
+    end,
+    date_paiement = case
+      when v_facture is not null and v_total >= v_facture and v_etape = 'paiement' then current_date
+      when v_facture is not null and v_total < v_facture and v_etape = 'paye' then null
+      else date_paiement
+    end
+  where id = v_dossier_id;
+
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists paiements_recompute on public.paiements;
+create trigger paiements_recompute
+  after insert or update or delete on public.paiements
+  for each row execute procedure public.recompute_montant_recu();
+
 -- ---------- ROW LEVEL SECURITY ----------
 -- Tout le monde qui est connecté a accès à tout (comme demandé : comptes
 -- individuels pour la traçabilité, mais aucune restriction de droits).
@@ -127,7 +194,17 @@ create policy "historique_all_authenticated"
   using (true)
   with check (true);
 
+alter table public.paiements enable row level security;
+
+drop policy if exists "paiements_all_authenticated" on public.paiements;
+create policy "paiements_all_authenticated"
+  on public.paiements for all
+  to authenticated
+  using (true)
+  with check (true);
+
 -- ---------- REALTIME ----------
 -- Permet au dashboard de se mettre à jour en direct pour tous les opérateurs
 alter publication supabase_realtime add table public.dossiers;
 alter publication supabase_realtime add table public.historique;
+alter publication supabase_realtime add table public.paiements;

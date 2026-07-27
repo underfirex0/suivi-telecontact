@@ -9,8 +9,9 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { format, addHours, addDays } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
-import type { Dossier, HistoriqueEntry, Profile } from "@/lib/types";
+import type { Dossier, HistoriqueEntry, Profile, Paiement } from "@/lib/types";
 import { todayISO } from "@/lib/utils";
 
 interface DossiersContextValue {
@@ -32,6 +33,9 @@ interface DossiersContextValue {
   revertFacturation: (id: string) => Promise<void>;
   revertPaiement: (id: string) => Promise<void>;
   fetchHistorique: (dossierId: string) => Promise<HistoriqueEntry[]>;
+  fetchPaiements: (dossierId: string) => Promise<Paiement[]>;
+  addPaiement: (dossierId: string, montant: number, datePaiement: string, note?: string) => Promise<void>;
+  deletePaiement: (id: string, dossierId: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -122,6 +126,13 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
         data: { user },
       } = await supabase.auth.getUser();
 
+      // La visibilité démarre au référencement (24h après création) et dure 365 jours,
+      // sauf si des dates historiques précises sont fournies (import de données 2025/2026).
+      const dateDebutVisibilite =
+        input.date_debut_visibilite ?? format(addHours(new Date(), 24), "yyyy-MM-dd");
+      const dateFinVisibilite =
+        input.date_fin_visibilite ?? format(addDays(new Date(dateDebutVisibilite), 365), "yyyy-MM-dd");
+
       const { data, error } = await supabase
         .from("dossiers")
         .insert({
@@ -132,6 +143,10 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
           date_bc: input.date_bc,
           operateur_id: input.operateur_id ?? null,
           notes: input.notes ?? null,
+          ville: input.ville ?? null,
+          numero_facture: input.numero_facture ?? null,
+          date_debut_visibilite: dateDebutVisibilite,
+          date_fin_visibilite: dateFinVisibilite,
           etape: "qc",
           qc_sous_statut: "attente",
           created_by: user?.id ?? null,
@@ -297,6 +312,48 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [supabase]
   );
 
+  const fetchPaiements = useCallback(
+    async (dossierId: string) => {
+      const { data } = await supabase
+        .from("paiements")
+        .select("*")
+        .eq("dossier_id", dossierId)
+        .order("date_paiement", { ascending: false });
+      return (data as Paiement[]) ?? [];
+    },
+    [supabase]
+  );
+
+  const addPaiement = useCallback(
+    async (dossierId: string, montant: number, datePaiement: string, note?: string) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from("paiements").insert({
+        dossier_id: dossierId,
+        montant,
+        date_paiement: datePaiement,
+        note: note ?? null,
+        created_by: user?.id ?? null,
+      });
+      await addHistorique(
+        dossierId,
+        `Paiement enregistré — ${montant.toLocaleString("fr-FR")} MAD${note ? " (" + note + ")" : ""}.`
+      );
+      await loadAll();
+    },
+    [supabase, addHistorique, loadAll]
+  );
+
+  const deletePaiement = useCallback(
+    async (id: string, dossierId: string) => {
+      await supabase.from("paiements").delete().eq("id", id);
+      await addHistorique(dossierId, "Un paiement a été supprimé (correction).");
+      await loadAll();
+    },
+    [supabase, addHistorique, loadAll]
+  );
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     router.push("/login");
@@ -322,6 +379,9 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     revertFacturation,
     revertPaiement,
     fetchHistorique,
+    fetchPaiements,
+    addPaiement,
+    deletePaiement,
     signOut,
   };
 

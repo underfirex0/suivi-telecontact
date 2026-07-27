@@ -10,12 +10,14 @@ import {
   CheckCircle2,
   Clock,
   Inbox,
+  TrendingDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { analyzeDossier, KANBAN_COLUMNS } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { initials } from "@/lib/utils";
-import type { Dossier, Profile, StatusColor } from "@/lib/types";
+import { STATUS_HEX as HEX } from "@/lib/status-colors";
+import type { Dossier, Profile } from "@/lib/types";
 
 const COLUMN_ICONS: Record<string, typeof ClipboardCheck> = {
   qc: ClipboardCheck,
@@ -23,15 +25,8 @@ const COLUMN_ICONS: Record<string, typeof ClipboardCheck> = {
   facturation: Receipt,
   paiement: Wallet,
   juridique: Scale,
+  perte: TrendingDown,
   paye: CheckCircle2,
-};
-
-const HEX: Record<StatusColor, string> = {
-  neutral: "#6B7280",
-  warning: "#C2790A",
-  danger: "#C0392B",
-  juridique: "#5B3A8E",
-  success: "#1F8A55",
 };
 
 export function KanbanBoard({

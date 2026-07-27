@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Archive, RotateCcw, Undo2 } from "lucide-react";
+import { ArrowLeft, Archive, RotateCcw, Undo2, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { FacturerDialog } from "@/components/facturer-dialog";
+import { AjouterPaiementDialog } from "@/components/ajouter-paiement-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, dateReferencement } from "@/lib/dossier-logic";
-import { formatMontant } from "@/lib/utils";
+import { formatMontant, formatDate } from "@/lib/utils";
+import { STATUS_HEX } from "@/lib/status-colors";
 import { useNow } from "@/lib/use-now";
-import type { HistoriqueEntry } from "@/lib/types";
+import type { HistoriqueEntry, Paiement } from "@/lib/types";
 
 export default function DossierDetailPage() {
   const params = useParams<{ id: string }>();
@@ -37,6 +39,9 @@ export default function DossierDetailPage() {
     revertFacturation,
     revertPaiement,
     fetchHistorique,
+    fetchPaiements,
+    addPaiement,
+    deletePaiement,
   } = useDossiers();
 
   const dossier = dossiers.find((d) => d.id === params.id);
@@ -46,11 +51,15 @@ export default function DossierDetailPage() {
   const [contact, setContact] = useState("");
   const [commercial, setCommercial] = useState("");
   const [dateBc, setDateBc] = useState("");
+  const [ville, setVille] = useState("");
+  const [numeroFacture, setNumeroFacture] = useState("");
   const [notes, setNotes] = useState("");
   const [juridiqueNotes, setJuridiqueNotes] = useState("");
   const [operateurId, setOperateurId] = useState("");
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
+  const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [facturerOpen, setFacturerOpen] = useState(false);
+  const [paiementOpen, setPaiementOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const now = useNow();
@@ -62,6 +71,8 @@ export default function DossierDetailPage() {
       setContact(dossier.contact_client ?? "");
       setCommercial(dossier.commercial ?? "");
       setDateBc(dossier.date_bc ?? "");
+      setVille(dossier.ville ?? "");
+      setNumeroFacture(dossier.numero_facture ?? "");
       setNotes(dossier.notes ?? "");
       setJuridiqueNotes(dossier.juridique_notes ?? "");
       setOperateurId(dossier.operateur_id ?? "");
@@ -72,6 +83,7 @@ export default function DossierDetailPage() {
   useEffect(() => {
     if (params.id) {
       fetchHistorique(params.id).then(setHistorique);
+      fetchPaiements(params.id).then(setPaiements);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, dossier?.updated_at]);
@@ -103,6 +115,11 @@ export default function DossierDetailPage() {
 
   const a = analyzeDossier(dossier, now);
   const isArchived = !!dossier.archived_at;
+  const reste = dossier.montant_facture != null ? dossier.montant_facture - dossier.montant_recu : null;
+  const showVisibilitePanel =
+    (dossier.etape === "paiement" || dossier.etape === "paye") &&
+    dossier.date_debut_visibilite &&
+    dossier.date_fin_visibilite;
 
   async function handleSave() {
     if (!clientNom.trim()) {
@@ -118,6 +135,8 @@ export default function DossierDetailPage() {
         contact_client: contact.trim() || null,
         commercial: commercial.trim() || null,
         date_bc: dateBc,
+        ville: ville.trim() || null,
+        numero_facture: numeroFacture.trim() || null,
         notes: notes.trim() || null,
         operateur_id: operateurId || null,
         juridique_notes: juridiqueNotes.trim() || null,
@@ -136,6 +155,11 @@ export default function DossierDetailPage() {
       return;
     await archiveDossier(dossier!.id);
     router.push("/dossiers");
+  }
+
+  async function handleDeletePaiement(id: string) {
+    if (!confirm("Supprimer ce paiement ? Le montant reçu et le statut du dossier seront recalculés.")) return;
+    await deletePaiement(id, dossier!.id);
   }
 
   async function runAction(fn: () => Promise<void>) {
@@ -201,6 +225,14 @@ export default function DossierDetailPage() {
               <Input id="d-datebc" type="date" value={dateBc} onChange={(e) => setDateBc(e.target.value)} />
             </div>
             <div>
+              <Label htmlFor="d-ville">Ville</Label>
+              <Input id="d-ville" value={ville} onChange={(e) => setVille(e.target.value)} placeholder="ex: Casablanca" />
+            </div>
+            <div>
+              <Label htmlFor="d-facture">N° facture</Label>
+              <Input id="d-facture" value={numeroFacture} onChange={(e) => setNumeroFacture(e.target.value)} />
+            </div>
+            <div>
               <Label>Opérateur assigné</Label>
               <Select value={operateurId} onValueChange={setOperateurId}>
                 <SelectTrigger>
@@ -227,15 +259,104 @@ export default function DossierDetailPage() {
                 })}
               </div>
             </div>
-            {dossier.montant_facture != null && (
-              <div>
-                <Label>Montant facturé</Label>
-                <div className="pt-1.5 font-mono text-[13.5px] font-medium text-ink">
-                  {formatMontant(dossier.montant_facture)}
+          </div>
+
+          {showVisibilitePanel && (
+            <div className="mb-5 rounded-xl border border-border p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="font-display text-[13.5px] font-semibold text-ink">Visibilité &amp; règlement</div>
+                {a.color === "perte" && <Badge color="perte"><AlertTriangle size={11} /> Perte réelle</Badge>}
+                {a.desyncRisque && <Badge color="warning"><AlertTriangle size={11} /> Risque de désynchronisation</Badge>}
+              </div>
+
+              <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-ink-2">
+                <span>Temps de visibilité consommé</span>
+                <span className="font-mono font-semibold text-ink">
+                  {a.pctTemps != null ? Math.round(a.pctTemps) : "—"}%
+                </span>
+              </div>
+              <div className="mb-3 h-2 overflow-hidden rounded-full bg-surface-2">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(100, a.pctTemps ?? 0)}%`,
+                    backgroundColor: (a.pctTemps ?? 0) >= 100 ? STATUS_HEX.perte : STATUS_HEX.neutral,
+                  }}
+                />
+              </div>
+
+              <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-ink-2">
+                <span>Montant réglé</span>
+                <span className="font-mono font-semibold text-ink">
+                  {a.pctPaye != null ? Math.round(a.pctPaye) : "—"}%
+                </span>
+              </div>
+              <div className="mb-4 h-2 overflow-hidden rounded-full bg-surface-2">
+                <div
+                  className="h-full rounded-full bg-success"
+                  style={{ width: `${Math.min(100, a.pctPaye ?? 0)}%` }}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 border-t border-border pt-3 text-[12px]">
+                <div>
+                  <div className="text-ink-2">Facturé</div>
+                  <div className="font-mono font-semibold text-ink">{formatMontant(dossier.montant_facture)}</div>
+                </div>
+                <div>
+                  <div className="text-ink-2">Reçu</div>
+                  <div className="font-mono font-semibold text-success">{formatMontant(dossier.montant_recu)}</div>
+                </div>
+                <div>
+                  <div className="text-ink-2">Reste</div>
+                  <div className="font-mono font-semibold text-danger">{formatMontant(reste)}</div>
                 </div>
               </div>
-            )}
-          </div>
+              <div className="mt-2 text-[11px] text-ink-3">
+                Visibilité du {formatDate(dossier.date_debut_visibilite)} au {formatDate(dossier.date_fin_visibilite)}
+              </div>
+            </div>
+          )}
+
+          {(dossier.etape === "paiement" || dossier.etape === "paye") && (
+            <div className="mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="font-display text-[13.5px] font-semibold text-ink">Paiements reçus</div>
+                <Button variant="secondary" onClick={() => setPaiementOpen(true)}>
+                  <Plus size={14} />
+                  Ajouter un paiement
+                </Button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {paiements.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-border py-4 text-center text-[12px] text-ink-3">
+                    Aucun paiement enregistré.
+                  </div>
+                )}
+                {paiements.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5"
+                  >
+                    <div>
+                      <div className="font-mono text-[13px] font-semibold text-ink">{formatMontant(p.montant)}</div>
+                      <div className="text-[11px] text-ink-2">
+                        {formatDate(p.date_paiement)}
+                        {p.note ? ` · ${p.note}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeletePaiement(p.id)}
+                      className="rounded-md p-1.5 text-ink-3 transition-colors hover:bg-danger-tint hover:text-danger"
+                      title="Supprimer ce paiement"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {dossier.etape === "paiement" && (
             <div className="mb-4">
@@ -296,7 +417,7 @@ export default function DossierDetailPage() {
             {dossier.etape === "paiement" && (
               <>
                 <Button variant="success" disabled={busy} onClick={() => runAction(() => markPaye(dossier.id))}>
-                  Marquer payé
+                  Marquer soldé manuellement
                 </Button>
                 <Button
                   variant="secondary"
@@ -369,6 +490,12 @@ export default function DossierDetailPage() {
         open={facturerOpen}
         onOpenChange={setFacturerOpen}
         onConfirm={(date, montant) => markFacture(dossier.id, date, montant)}
+      />
+      <AjouterPaiementDialog
+        open={paiementOpen}
+        onOpenChange={setPaiementOpen}
+        reste={reste}
+        onConfirm={(montant, date, note) => addPaiement(dossier.id, montant, date, note)}
       />
     </>
   );

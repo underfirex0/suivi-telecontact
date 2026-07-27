@@ -21,7 +21,14 @@ export interface Dossier {
 
   date_facture: string | null;
   montant_facture: number | null;
+  montant_recu: number;
   date_paiement: string | null;
+
+  date_debut_visibilite: string | null;
+  date_fin_visibilite: string | null;
+
+  numero_facture: string | null;
+  ville: string | null;
 
   juridique_actif: boolean;
   juridique_notes: string | null;
@@ -45,18 +52,33 @@ export interface HistoriqueEntry {
   created_at: string;
 }
 
+export interface Paiement {
+  id: string;
+  dossier_id: string;
+  montant: number;
+  date_paiement: string;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 export type StatusColor =
   | "neutral"
   | "warning"
   | "danger"
   | "juridique"
-  | "success";
+  | "success"
+  | "perte";
 
 export interface DossierStatus {
   label: string;
   sub: string;
   color: StatusColor;
   alert: boolean;
-  severity: number; // 0 = calm, higher = more urgent
-  columnKey: "qc" | "a_corriger" | "facturation" | "paiement" | "juridique" | "paye";
+  severity: number; // 0 = calm, higher = more urgent (perte réelle = 5, the worst)
+  columnKey: "qc" | "a_corriger" | "facturation" | "paiement" | "juridique" | "perte" | "paye";
+  // Indicateurs de visibilité (uniquement calculés si les dates de visibilité existent)
+  pctTemps: number | null; // % du temps de visibilité déjà consommé
+  pctPaye: number | null; // % du montant facturé déjà réglé
+  desyncRisque: boolean; // écart important entre temps consommé et montant payé — agir avant la perte totale
 }
