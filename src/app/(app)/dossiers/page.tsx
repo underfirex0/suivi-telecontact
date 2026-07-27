@@ -2,26 +2,31 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Archive, RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw, Ban } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { KanbanBoard } from "@/components/kanban-board";
 import { DossierTable } from "@/components/dossier-table";
+import { FileAction } from "@/components/file-action";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, formatMontant } from "@/lib/utils";
 
 export default function DossiersPage() {
-  const { dossiers: allDossiers, profiles, loading, restoreDossier } = useDossiers();
+  const { dossiers: allDossiers, profiles, loading, restoreDossier, reactivateDossier } = useDossiers();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const now = useNow();
 
-  const active = useMemo(() => allDossiers.filter((d) => !d.archived_at), [allDossiers]);
+  const active = useMemo(
+    () => allDossiers.filter((d) => !d.archived_at && !d.abandonne_at),
+    [allDossiers]
+  );
   const archived = useMemo(() => allDossiers.filter((d) => d.archived_at), [allDossiers]);
+  const abandonnes = useMemo(() => allDossiers.filter((d) => d.abandonne_at && !d.archived_at), [allDossiers]);
 
   const filtered = useMemo(() => {
     if (!search) return active;
@@ -47,7 +52,7 @@ export default function DossiersPage() {
     <>
       <Topbar
         title="Dossiers"
-        description="Vue par étape du processus de référencement"
+        description="Pipeline de référencement et file d'action de recouvrement"
         search={search}
         onSearchChange={setSearch}
       />
@@ -55,11 +60,15 @@ export default function DossiersPage() {
         {loading ? (
           <div className="h-64 animate-pulse rounded-xl bg-surface-2" />
         ) : (
-          <Tabs defaultValue="kanban">
+          <Tabs defaultValue="file-action">
             <div className="mb-5 flex items-center justify-between">
               <TabsList>
+                <TabsTrigger value="file-action">File d&apos;action</TabsTrigger>
                 <TabsTrigger value="kanban">Kanban</TabsTrigger>
                 <TabsTrigger value="table">Liste</TabsTrigger>
+                <TabsTrigger value="abandonnes">
+                  Abandonnés{abandonnes.length > 0 ? ` (${abandonnes.length})` : ""}
+                </TabsTrigger>
                 <TabsTrigger value="archives">
                   Archives{archived.length > 0 ? ` (${archived.length})` : ""}
                 </TabsTrigger>
@@ -81,16 +90,55 @@ export default function DossiersPage() {
               </button>
             </div>
 
+            <TabsContent value="file-action">
+              <FileAction dossiers={filtered} profiles={profiles} />
+            </TabsContent>
+
             <TabsContent value="kanban">
-              <KanbanBoard dossiers={filtered} profiles={profiles} onlyAlerts={onlyAlerts} />
+              <KanbanBoard dossiers={filtered.filter((d) => d.etape !== "paiement")} profiles={profiles} onlyAlerts={onlyAlerts} />
             </TabsContent>
             <TabsContent value="table">
               <DossierTable dossiers={tableDossiers} profiles={profiles} />
             </TabsContent>
+
+            <TabsContent value="abandonnes">
+              {abandonnes.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-surface py-10 text-center text-ink-2">
+                  <div className="text-[13px]">Aucun dossier abandonné.</div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {abandonnes.map((d) => {
+                    const reste = Math.max(0, (d.montant_facture ?? 0) - d.montant_recu);
+                    return (
+                      <div
+                        key={d.id}
+                        className="flex items-center gap-3.5 rounded-xl border border-border bg-surface p-3.5 shadow-card"
+                      >
+                        <Ban size={15} className="flex-shrink-0 text-ink-3" />
+                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => router.push(`/dossiers/${d.id}`)}>
+                          <div className="truncate text-[13.5px] font-semibold text-ink">{d.client_nom}</div>
+                          <div className="truncate text-[12px] text-ink-2">
+                            Abandonné le {formatDate(d.abandonne_at?.slice(0, 10))}
+                            {d.abandonne_par ? ` par ${profileMap.get(d.abandonne_par) ?? "Inconnu"}` : ""} —{" "}
+                            {d.abandonne_raison}
+                          </div>
+                        </div>
+                        <div className="font-mono text-[13px] font-semibold text-ink-2">{formatMontant(reste)}</div>
+                        <Button variant="secondary" onClick={() => reactivateDossier(d.id)}>
+                          <RotateCcw size={14} />
+                          Réactiver
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+
             <TabsContent value="archives">
               {archived.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-surface py-10 text-center text-ink-2">
-                  <Archive size={20} className="opacity-40" />
+                <div className="rounded-xl border border-dashed border-border bg-surface py-10 text-center text-ink-2">
                   <div className="text-[13px]">Aucun dossier archivé.</div>
                 </div>
               ) : (
@@ -100,7 +148,6 @@ export default function DossiersPage() {
                       key={d.id}
                       className="flex items-center gap-3.5 rounded-xl border border-border bg-surface p-3.5 shadow-card"
                     >
-                      <Archive size={15} className="flex-shrink-0 text-ink-3" />
                       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => router.push(`/dossiers/${d.id}`)}>
                         <div className="truncate text-[13.5px] font-semibold text-ink">{d.client_nom}</div>
                         <div className="truncate text-[12px] text-ink-2">

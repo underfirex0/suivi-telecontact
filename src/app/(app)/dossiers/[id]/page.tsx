@@ -2,7 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Archive, RotateCcw, Undo2, Plus, Trash2, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft,
+  Archive,
+  RotateCcw,
+  Undo2,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  UserPlus,
+  PhoneCall,
+  Ban,
+} from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,12 +23,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { FacturerDialog } from "@/components/facturer-dialog";
 import { AjouterPaiementDialog } from "@/components/ajouter-paiement-dialog";
+import { ActionLogDialog } from "@/components/action-log-dialog";
+import { AbandonDialog } from "@/components/abandon-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, dateReferencement } from "@/lib/dossier-logic";
 import { formatMontant, formatDate } from "@/lib/utils";
 import { STATUS_HEX } from "@/lib/status-colors";
 import { useNow } from "@/lib/use-now";
-import type { HistoriqueEntry, Paiement } from "@/lib/types";
+import type { HistoriqueEntry, Paiement, ActionEntry } from "@/lib/types";
+
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  appel: "Appel",
+  email: "Email",
+  visite: "Visite",
+  promesse_paiement: "Promesse de paiement",
+  autre: "Autre",
+};
 
 export default function DossierDetailPage() {
   const params = useParams<{ id: string }>();
@@ -42,6 +63,11 @@ export default function DossierDetailPage() {
     fetchPaiements,
     addPaiement,
     deletePaiement,
+    fetchActions,
+    addAction,
+    claimDossier,
+    abandonDossier,
+    reactivateDossier,
   } = useDossiers();
 
   const dossier = dossiers.find((d) => d.id === params.id);
@@ -58,8 +84,11 @@ export default function DossierDetailPage() {
   const [operateurId, setOperateurId] = useState("");
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
+  const [actions, setActions] = useState<ActionEntry[]>([]);
   const [facturerOpen, setFacturerOpen] = useState(false);
   const [paiementOpen, setPaiementOpen] = useState(false);
+  const [actionOpen, setActionOpen] = useState(false);
+  const [abandonOpen, setAbandonOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const now = useNow();
@@ -84,6 +113,7 @@ export default function DossierDetailPage() {
     if (params.id) {
       fetchHistorique(params.id).then(setHistorique);
       fetchPaiements(params.id).then(setPaiements);
+      fetchActions(params.id).then(setActions);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, dossier?.updated_at]);
@@ -115,6 +145,7 @@ export default function DossierDetailPage() {
 
   const a = analyzeDossier(dossier, now);
   const isArchived = !!dossier.archived_at;
+  const isAbandonne = !!dossier.abandonne_at;
   const reste = dossier.montant_facture != null ? dossier.montant_facture - dossier.montant_recu : null;
   const showVisibilitePanel =
     (dossier.etape === "paiement" || dossier.etape === "paye") &&
@@ -197,6 +228,23 @@ export default function DossierDetailPage() {
           </div>
         )}
 
+        {isAbandonne && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-border bg-surface-2 px-4 py-3">
+            <div className="text-[13px] text-ink-2">
+              <span className="font-semibold text-ink">Dossier abandonné</span>
+              {dossier.abandonne_raison ? ` — ${dossier.abandonne_raison}` : ""}
+            </div>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => runAction(() => reactivateDossier(dossier.id))}
+            >
+              <RotateCcw size={14} />
+              Réactiver
+            </Button>
+          </div>
+        )}
+
         <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
           <div className="mb-5 flex flex-wrap items-center gap-2.5">
             <Badge color={a.color}>{a.label}</Badge>
@@ -234,18 +282,27 @@ export default function DossierDetailPage() {
             </div>
             <div>
               <Label>Opérateur assigné</Label>
-              <Select value={operateurId} onValueChange={setOperateurId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="— Aucun —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Select value={operateurId} onValueChange={setOperateurId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="— Aucun —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profiles.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {!dossier.operateur_id && dossier.etape === "paiement" && (
+                  <Button variant="secondary" onClick={() => runAction(() => claimDossier(dossier.id))}>
+                    <UserPlus size={14} />
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
               <Label>{dateReferencement(dossier.created_at) > now ? "Référencement prévu" : "Référencé le"}</Label>
@@ -265,8 +322,11 @@ export default function DossierDetailPage() {
             <div className="mb-5 rounded-xl border border-border p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="font-display text-[13.5px] font-semibold text-ink">Visibilité &amp; règlement</div>
-                {a.color === "perte" && <Badge color="perte"><AlertTriangle size={11} /> Perte réelle</Badge>}
-                {a.desyncRisque && <Badge color="warning"><AlertTriangle size={11} /> Risque de désynchronisation</Badge>}
+                {a.desyncRisque && (
+                  <Badge color="warning">
+                    <AlertTriangle size={11} /> Risque de désynchronisation
+                  </Badge>
+                )}
               </div>
 
               <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-ink-2">
@@ -359,6 +419,44 @@ export default function DossierDetailPage() {
           )}
 
           {dossier.etape === "paiement" && (
+            <div className="mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="font-display text-[13.5px] font-semibold text-ink">Actions de recouvrement</div>
+                <Button variant="secondary" onClick={() => setActionOpen(true)}>
+                  <PhoneCall size={14} />
+                  Enregistrer une action
+                </Button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {actions.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-border py-4 text-center text-[12px] text-ink-3">
+                    Aucune action enregistrée pour l&apos;instant.
+                  </div>
+                )}
+                {actions.map((act) => (
+                  <div key={act.id} className="rounded-lg border border-border px-3 py-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12.5px] font-semibold text-ink">
+                        {ACTION_TYPE_LABELS[act.type] ?? act.type}
+                      </span>
+                      <span className="text-[11px] text-ink-3">
+                        {new Date(act.created_at).toLocaleString("fr-FR")}
+                      </span>
+                    </div>
+                    {act.resultat && <div className="mt-1 text-[12px] text-ink-2">{act.resultat}</div>}
+                    {act.date_rappel && (
+                      <div className="mt-1 text-[11px] font-semibold text-brand">
+                        Rappel prévu le {act.date_rappel}
+                      </div>
+                    )}
+                    {act.note && <div className="mt-1 text-[11.5px] text-ink-3">{act.note}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dossier.etape === "paiement" && (
             <div className="mb-4">
               <Label htmlFor="jnotes">Notes suivi juridique / relances</Label>
               <Textarea
@@ -414,7 +512,7 @@ export default function DossierDetailPage() {
                 </Button>
               </>
             )}
-            {dossier.etape === "paiement" && (
+            {dossier.etape === "paiement" && !isAbandonne && (
               <>
                 <Button variant="success" disabled={busy} onClick={() => runAction(() => markPaye(dossier.id))}>
                   Marquer soldé manuellement
@@ -424,7 +522,7 @@ export default function DossierDetailPage() {
                   disabled={busy}
                   onClick={() => runAction(() => toggleJuridique(dossier.id))}
                 >
-                  {dossier.juridique_actif ? "Retirer du suivi juridique" : "Activer suivi juridique manuellement"}
+                  {dossier.juridique_actif ? "Retirer du suivi juridique" : "Activer suivi juridique (décision manuelle)"}
                 </Button>
                 <Button
                   variant="ghost"
@@ -433,6 +531,10 @@ export default function DossierDetailPage() {
                 >
                   <Undo2 size={14} />
                   Annuler la facturation
+                </Button>
+                <Button variant="ghost" disabled={busy} onClick={() => setAbandonOpen(true)}>
+                  <Ban size={14} />
+                  Abandonner ce dossier
                 </Button>
               </>
             )}
@@ -496,6 +598,17 @@ export default function DossierDetailPage() {
         onOpenChange={setPaiementOpen}
         reste={reste}
         onConfirm={(montant, date, note) => addPaiement(dossier.id, montant, date, note)}
+      />
+      <ActionLogDialog
+        open={actionOpen}
+        onOpenChange={setActionOpen}
+        onConfirm={(type, resultat, note, dateRappel) => addAction(dossier.id, type, resultat, note, dateRappel)}
+      />
+      <AbandonDialog
+        open={abandonOpen}
+        onOpenChange={setAbandonOpen}
+        clientNom={dossier.client_nom}
+        onConfirm={(raison) => abandonDossier(dossier.id, raison)}
       />
     </>
   );

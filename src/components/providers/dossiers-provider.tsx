@@ -11,7 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { format, addHours, addDays } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
-import type { Dossier, HistoriqueEntry, Profile, Paiement } from "@/lib/types";
+import type { Dossier, HistoriqueEntry, Profile, Paiement, ActionEntry, ActionType } from "@/lib/types";
 import { todayISO } from "@/lib/utils";
 
 interface DossiersContextValue {
@@ -36,6 +36,17 @@ interface DossiersContextValue {
   fetchPaiements: (dossierId: string) => Promise<Paiement[]>;
   addPaiement: (dossierId: string, montant: number, datePaiement: string, note?: string) => Promise<void>;
   deletePaiement: (id: string, dossierId: string) => Promise<void>;
+  fetchActions: (dossierId: string) => Promise<ActionEntry[]>;
+  addAction: (
+    dossierId: string,
+    type: ActionType,
+    resultat: string,
+    note: string,
+    dateRappel: string | null
+  ) => Promise<void>;
+  claimDossier: (id: string) => Promise<void>;
+  abandonDossier: (id: string, raison: string) => Promise<void>;
+  reactivateDossier: (id: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -354,6 +365,86 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [supabase, addHistorique, loadAll]
   );
 
+  const fetchActions = useCallback(
+    async (dossierId: string) => {
+      const { data } = await supabase
+        .from("actions")
+        .select("*")
+        .eq("dossier_id", dossierId)
+        .order("created_at", { ascending: false });
+      return (data as ActionEntry[]) ?? [];
+    },
+    [supabase]
+  );
+
+  const ACTION_LABELS: Record<ActionType, string> = {
+    appel: "Appel",
+    email: "Email",
+    visite: "Visite",
+    promesse_paiement: "Promesse de paiement",
+    autre: "Autre",
+  };
+
+  const addAction = useCallback(
+    async (dossierId: string, type: ActionType, resultat: string, note: string, dateRappel: string | null) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from("actions").insert({
+        dossier_id: dossierId,
+        type,
+        resultat: resultat || null,
+        note: note || null,
+        date_rappel: dateRappel,
+        created_by: user?.id ?? null,
+      });
+      const label = ACTION_LABELS[type];
+      const texte = `Action enregistrée — ${label}${resultat ? " : " + resultat : ""}${
+        dateRappel ? ` (rappel prévu le ${dateRappel})` : ""
+      }`;
+      await addHistorique(dossierId, texte);
+      await loadAll();
+    },
+    [supabase, addHistorique, loadAll]
+  );
+
+  const claimDossier = useCallback(
+    async (id: string) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const mine = profiles.find((p) => p.id === user.id);
+      await updateDossier(id, { operateur_id: user.id }, `Dossier pris en charge par ${mine?.full_name ?? "un opérateur"}.`);
+    },
+    [supabase, profiles, updateDossier]
+  );
+
+  const abandonDossier = useCallback(
+    async (id: string, raison: string) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await updateDossier(
+        id,
+        { abandonne_at: new Date().toISOString(), abandonne_par: user?.id ?? null, abandonne_raison: raison },
+        `Dossier abandonné — ${raison}`
+      );
+    },
+    [supabase, updateDossier]
+  );
+
+  const reactivateDossier = useCallback(
+    async (id: string) => {
+      await updateDossier(
+        id,
+        { abandonne_at: null, abandonne_par: null, abandonne_raison: null },
+        "Dossier réactivé (retiré des abandons)."
+      );
+    },
+    [updateDossier]
+  );
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     router.push("/login");
@@ -382,6 +473,11 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     fetchPaiements,
     addPaiement,
     deletePaiement,
+    fetchActions,
+    addAction,
+    claimDossier,
+    abandonDossier,
+    reactivateDossier,
     signOut,
   };
 

@@ -56,6 +56,13 @@ create table if not exists public.dossiers (
   numero_facture text,
   ville text,
 
+  abandonne_at timestamptz,
+  abandonne_par uuid references public.profiles(id) on delete set null,
+  abandonne_raison text,
+
+  derniere_action_at timestamptz,
+  prochain_rappel date,
+
   juridique_actif boolean not null default false,
   juridique_notes text,
 
@@ -203,8 +210,51 @@ create policy "paiements_all_authenticated"
   using (true)
   with check (true);
 
+-- ---------- ACTIONS (log des actions humaines : appels, emails, visites...) ----------
+create table if not exists public.actions (
+  id uuid primary key default gen_random_uuid(),
+  dossier_id uuid not null references public.dossiers(id) on delete cascade,
+  type text not null check (type in ('appel', 'email', 'visite', 'promesse_paiement', 'autre')),
+  resultat text,
+  note text,
+  date_rappel date,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists actions_dossier_idx on public.actions(dossier_id);
+
+create or replace function public.recompute_derniere_action()
+returns trigger
+language plpgsql
+as $$
+begin
+  update public.dossiers
+  set
+    derniere_action_at = now(),
+    prochain_rappel = new.date_rappel
+  where id = new.dossier_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists actions_recompute on public.actions;
+create trigger actions_recompute
+  after insert on public.actions
+  for each row execute procedure public.recompute_derniere_action();
+
+alter table public.actions enable row level security;
+
+drop policy if exists "actions_all_authenticated" on public.actions;
+create policy "actions_all_authenticated"
+  on public.actions for all
+  to authenticated
+  using (true)
+  with check (true);
+
 -- ---------- REALTIME ----------
 -- Permet au dashboard de se mettre à jour en direct pour tous les opérateurs
 alter publication supabase_realtime add table public.dossiers;
 alter publication supabase_realtime add table public.historique;
 alter publication supabase_realtime add table public.paiements;
+alter publication supabase_realtime add table public.actions;

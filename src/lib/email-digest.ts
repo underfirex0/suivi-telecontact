@@ -6,6 +6,11 @@ interface AlertRow {
   offre: string | null;
   status: DossierStatus;
   dossierId: string;
+  reste: number;
+}
+
+function formatMad(n: number): string {
+  return n.toLocaleString("fr-FR", { minimumFractionDigits: 0 }) + " MAD";
 }
 
 function row(a: AlertRow, appUrl: string): string {
@@ -24,7 +29,8 @@ function row(a: AlertRow, appUrl: string): string {
               <div style="font-size:12.5px;color:#5B6072;margin-top:2px;">${a.offre ?? "—"}</div>
               <div style="font-size:11.5px;color:#9297A6;margin-top:6px;font-family:monospace;">${a.status.sub}</div>
             </td>
-            <td style="text-align:right;vertical-align:middle;">
+            <td style="text-align:right;vertical-align:middle;white-space:nowrap;">
+              <div style="font-size:14px;font-weight:bold;color:#12131A;margin-bottom:8px;">${formatMad(a.reste)}</div>
               <a href="${link}" style="display:inline-block;background:#0E7C7B;color:#ffffff;text-decoration:none;font-size:12.5px;font-weight:bold;padding:8px 14px;border-radius:8px;">
                 Voir le dossier
               </a>
@@ -36,7 +42,27 @@ function row(a: AlertRow, appUrl: string): string {
   `;
 }
 
-export function buildDigestEmailHtml(alerts: AlertRow[], appUrl: string): string {
+function section(title: string, alerts: AlertRow[], appUrl: string): string {
+  if (alerts.length === 0) return "";
+  return `
+    <tr>
+      <td style="padding:16px 16px 8px;font-family:Arial,sans-serif;font-size:12.5px;font-weight:bold;color:#5B6072;text-transform:uppercase;letter-spacing:0.03em;">
+        ${title} (${alerts.length})
+      </td>
+    </tr>
+    <tr><td style="padding:0 16px 8px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E3E5EA;border-radius:10px;overflow:hidden;">
+        ${alerts.map((a) => row(a, appUrl)).join("")}
+      </table>
+    </td></tr>
+  `;
+}
+
+export function buildDigestEmailHtml(
+  mesDossiers: AlertRow[],
+  nonAssignes: AlertRow[],
+  appUrl: string
+): string {
   const today = new Date().toLocaleDateString("fr-FR", {
     weekday: "long",
     day: "2-digit",
@@ -44,8 +70,10 @@ export function buildDigestEmailHtml(alerts: AlertRow[], appUrl: string): string
     year: "numeric",
   });
 
+  const total = mesDossiers.length + nonAssignes.length;
+
   const body =
-    alerts.length === 0
+    total === 0
       ? `
         <tr>
           <td style="padding:32px 16px;text-align:center;background:#ffffff;">
@@ -54,7 +82,8 @@ export function buildDigestEmailHtml(alerts: AlertRow[], appUrl: string): string
           </td>
         </tr>
       `
-      : alerts.map((a) => row(a, appUrl)).join("");
+      : section("Vos dossiers prioritaires", mesDossiers, appUrl) +
+        section("Non assignés — à prendre en charge", nonAssignes, appUrl);
 
   return `
   <!DOCTYPE html>
@@ -74,19 +103,15 @@ export function buildDigestEmailHtml(alerts: AlertRow[], appUrl: string): string
               <td style="padding:16px 24px 4px;">
                 <div style="font-size:12.5px;color:#5B6072;text-transform:capitalize;">${today}</div>
                 <div style="font-size:17px;font-weight:bold;color:#12131A;margin-top:4px;">
-                  ${alerts.length > 0 ? `${alerts.length} dossier${alerts.length > 1 ? "s" : ""} nécessite${alerts.length > 1 ? "nt" : ""} une action` : "Tout est à jour"}
+                  ${total > 0 ? `${total} dossier${total > 1 ? "s" : ""} nécessite${total > 1 ? "nt" : ""} une action` : "Tout est à jour"}
                 </div>
               </td>
             </tr>
-            <tr><td style="padding:8px 16px;">
-              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E3E5EA;border-radius:10px;overflow:hidden;">
-                ${body}
-              </table>
-            </td></tr>
+            ${body}
             <tr>
               <td style="padding:16px 24px 24px;text-align:center;">
-                <a href="${appUrl}/dashboard" style="color:#0E7C7B;font-size:12.5px;font-weight:bold;text-decoration:none;">
-                  Ouvrir le tableau de bord →
+                <a href="${appUrl}/dossiers" style="color:#0E7C7B;font-size:12.5px;font-weight:bold;text-decoration:none;">
+                  Ouvrir la file d'action →
                 </a>
               </td>
             </tr>

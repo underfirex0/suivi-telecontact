@@ -2,18 +2,22 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PartyPopper, AlertTriangle } from "lucide-react";
+import { PartyPopper, UserX } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
 import { useDossiers } from "@/components/providers/dossiers-provider";
-import { analyzeDossier } from "@/lib/dossier-logic";
-import { todayISO } from "@/lib/utils";
+import { analyzeDossier, scoreFileAction } from "@/lib/dossier-logic";
+import { todayISO, formatMontant } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { STATUS_HEX } from "@/lib/status-colors";
 
 export default function DashboardPage() {
   const { dossiers: allDossiers, loading } = useDossiers();
-  const dossiers = useMemo(() => allDossiers.filter((d) => !d.archived_at), [allDossiers]);
+  const dossiers = useMemo(
+    () => allDossiers.filter((d) => !d.archived_at && !d.abandonne_at),
+    [allDossiers]
+  );
+  const abandonnes = useMemo(() => allDossiers.filter((d) => d.abandonne_at), [allDossiers]);
   const router = useRouter();
   const [search, setSearch] = useState("");
   const now = useNow();
@@ -31,29 +35,35 @@ export default function DashboardPage() {
     [filtered, now]
   );
 
+  const enPaiement = analyzed.filter((x) => x.d.etape === "paiement");
   const active = filtered.filter((d) => d.etape !== "paye");
   const enQc = filtered.filter((d) => d.etape === "qc");
-  const alerts = analyzed.filter((x) => x.a.alert).sort((x, y) => y.a.severity - x.a.severity);
-  const juridiqueCount = analyzed.filter((x) => x.a.columnKey === "juridique").length;
-  const relanceCount = analyzed.filter((x) => x.a.columnKey === "paiement" && x.a.alert).length;
-  const perteCount = analyzed.filter((x) => x.a.columnKey === "perte").length;
   const payeThisMonth = filtered.filter(
     (d) => d.etape === "paye" && d.date_paiement && d.date_paiement.slice(0, 7) === todayISO().slice(0, 7)
   ).length;
 
-  const desyncList = analyzed
-    .filter((x) => x.a.desyncRisque)
-    .sort(
-      (x, y) =>
-        (y.a.pctTemps ?? 0) - (y.a.pctPaye ?? 0) - ((x.a.pctTemps ?? 0) - (x.a.pctPaye ?? 0))
-    );
+  const montantEnJeu = enPaiement.reduce(
+    (sum, x) => sum + Math.max(0, (x.d.montant_facture ?? 0) - x.d.montant_recu),
+    0
+  );
+  const montantPerduTotal = enPaiement
+    .filter((x) => x.a.columnKey === "perte_totale")
+    .reduce((sum, x) => sum + Math.max(0, (x.d.montant_facture ?? 0) - x.d.montant_recu), 0);
+  const montantRecuperable = montantEnJeu - montantPerduTotal;
+  const montantAbandonne = abandonnes.reduce(
+    (sum, d) => sum + Math.max(0, (d.montant_facture ?? 0) - d.montant_recu),
+    0
+  );
+
+  const fileAction = enPaiement
+    .filter((x) => x.a.alert)
+    .sort((x, y) => scoreFileAction(y.d, y.a) - scoreFileAction(x.d, x.a));
+
+  const nonAssignes = fileAction.filter((x) => !x.d.operateur_id);
 
   const kpis = [
     { label: "Dossiers actifs", value: active.length, cls: "" },
     { label: "En QC / à traiter", value: enQc.length, cls: "" },
-    { label: "Relances en cours", value: relanceCount, cls: relanceCount > 0 ? "text-warn" : "" },
-    { label: "Suivi juridique", value: juridiqueCount, cls: juridiqueCount > 0 ? "text-juridique" : "" },
-    { label: "Pertes réelles", value: perteCount, cls: perteCount > 0 ? "text-[#7A2E1F]" : "" },
     { label: "Payés ce mois", value: payeThisMonth, cls: "text-success" },
   ];
 
@@ -61,7 +71,7 @@ export default function DashboardPage() {
     <>
       <Topbar
         title="Tableau de bord"
-        description="Vue d'ensemble de tous les dossiers actifs"
+        description="Vue d'ensemble financière et priorités du jour"
         search={search}
         onSearchChange={setSearch}
       />
@@ -70,76 +80,112 @@ export default function DashboardPage() {
           <DashboardSkeleton />
         ) : (
           <>
-            <div className="mb-7 grid grid-cols-6 gap-3.5">
+            {/* Totaux financiers — ce qui compte vraiment */}
+            <div className="mb-3 font-display text-[13px] font-semibold uppercase tracking-wide text-ink-2">
+              Situation financière
+            </div>
+            <div className="mb-7 grid grid-cols-4 gap-3.5">
+              <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
+                <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-2">
+                  Montant en jeu
+                </div>
+                <div className="mt-1.5 font-mono text-[22px] font-bold text-ink">
+                  {formatMontant(montantEnJeu)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
+                <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-2">
+                  Encore récupérable
+                </div>
+                <div className="mt-1.5 font-mono text-[22px] font-bold text-success">
+                  {formatMontant(montantRecuperable)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
+                <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-2">
+                  Perdu définitivement
+                </div>
+                <div className="mt-1.5 font-mono text-[22px] font-bold text-[#7A2E1F]">
+                  {formatMontant(montantPerduTotal)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
+                <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-2">
+                  Abandonné ({abandonnes.length})
+                </div>
+                <div className="mt-1.5 font-mono text-[22px] font-bold text-ink-2">
+                  {formatMontant(montantAbandonne)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-7 grid grid-cols-3 gap-3.5">
               {kpis.map((k) => (
                 <div key={k.label} className="rounded-xl border border-border bg-surface p-4 shadow-card">
                   <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-2">
                     {k.label}
                   </div>
-                  <div className={`mt-1.5 font-display text-[28px] font-bold text-ink ${k.cls}`}>
+                  <div className={`mt-1.5 font-display text-[24px] font-bold text-ink ${k.cls}`}>
                     {k.value}
                   </div>
                 </div>
               ))}
             </div>
 
-            {desyncList.length > 0 && (
-              <div className="mb-7">
-                <div className="mb-3 flex items-center gap-2 font-display text-[14.5px] font-semibold text-ink">
-                  <AlertTriangle size={16} className="text-warn" />
-                  Risque de désynchronisation — agir avant la perte totale
-                  <span className="font-body text-[13px] font-medium text-ink-2">({desyncList.length})</span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {desyncList.map(({ d, a }) => (
-                    <button
-                      key={d.id}
-                      onClick={() => router.push(`/dossiers/${d.id}`)}
-                      className="flex items-center gap-3.5 rounded-xl border border-warn/30 bg-warn-tint/40 p-3.5 pl-4 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-lg border-l-4"
-                      style={{ borderLeftColor: STATUS_HEX.warning }}
-                    >
-                      <Badge color="warning">⚠ Désynchronisation</Badge>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13.5px] font-semibold text-ink">{d.client_nom}</div>
-                        <div className="truncate text-[12px] text-ink-2">{d.offre || "—"}</div>
-                      </div>
-                      <div className="whitespace-nowrap font-mono text-[11.5px] text-ink-2">
-                        {Math.round(a.pctTemps ?? 0)}% temps · {Math.round(a.pctPaye ?? 0)}% payé
-                      </div>
-                    </button>
-                  ))}
-                </div>
+            {nonAssignes.length > 0 && (
+              <div className="mb-5 flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-tint px-4 py-3 text-[13px] font-semibold text-warn">
+                <UserX size={15} />
+                {nonAssignes.length} dossier{nonAssignes.length > 1 ? "s" : ""} prioritaire
+                {nonAssignes.length > 1 ? "s" : ""} sans opérateur assigné.
               </div>
             )}
 
-            <div className="mb-3.5 flex items-center gap-2 font-display text-[14.5px] font-semibold text-ink">
-              🔥 Nécessite une action
-              <span className="font-body text-[13px] font-medium text-ink-2">({alerts.length})</span>
+            <div className="mb-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-display text-[14.5px] font-semibold text-ink">
+                🔥 File d&apos;action — top priorités
+                <span className="font-body text-[13px] font-medium text-ink-2">({fileAction.length})</span>
+              </div>
+              <button
+                onClick={() => router.push("/dossiers")}
+                className="text-[12.5px] font-semibold text-brand hover:underline"
+              >
+                Voir toute la file d&apos;action →
+              </button>
             </div>
 
-            {alerts.length === 0 ? (
+            {fileAction.length === 0 ? (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-surface py-10 text-center text-ink-2">
                 <PartyPopper size={22} className="text-success" />
                 <div className="font-display text-[15px] font-semibold text-ink">Rien à signaler</div>
-                <div className="text-[13px]">Aucun dossier en retard pour le moment.</div>
+                <div className="text-[13px]">Aucun dossier ne nécessite d&apos;action pour le moment.</div>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {alerts.map(({ d, a }) => (
-                  <button
-                    key={d.id}
-                    onClick={() => router.push(`/dossiers/${d.id}`)}
-                    className={`flex items-center gap-3.5 rounded-xl border border-border bg-surface p-3.5 pl-4 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-lg border-l-4`}
-                    style={{ borderLeftColor: STATUS_HEX[a.color] }}
-                  >
-                    <Badge color={a.color}>{a.label}</Badge>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13.5px] font-semibold text-ink">{d.client_nom}</div>
-                      <div className="truncate text-[12px] text-ink-2">{d.offre || "—"}</div>
-                    </div>
-                    <div className="whitespace-nowrap font-mono text-[11.5px] text-ink-2">{a.sub}</div>
-                  </button>
-                ))}
+                {fileAction.slice(0, 8).map(({ d, a }) => {
+                  const reste = Math.max(0, (d.montant_facture ?? 0) - d.montant_recu);
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => router.push(`/dossiers/${d.id}`)}
+                      className="flex items-center gap-3.5 rounded-xl border border-border bg-surface p-3.5 pl-4 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-lg border-l-4"
+                      style={{ borderLeftColor: STATUS_HEX[a.color] }}
+                    >
+                      <Badge color={a.color}>{a.label}</Badge>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13.5px] font-semibold text-ink">{d.client_nom}</div>
+                        <div className="truncate text-[12px] text-ink-2">
+                          {a.joursSansAction != null && a.joursSansAction > 0
+                            ? `${a.joursSansAction}j sans action`
+                            : "Aucune action enregistrée"}
+                          {!d.operateur_id && " · non assigné"}
+                        </div>
+                      </div>
+                      <div className="whitespace-nowrap font-mono text-[12.5px] font-semibold text-ink">
+                        {formatMontant(reste)}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </>
@@ -152,8 +198,8 @@ export default function DashboardPage() {
 function DashboardSkeleton() {
   return (
     <div className="animate-pulse">
-      <div className="mb-7 grid grid-cols-6 gap-3.5">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="mb-7 grid grid-cols-4 gap-3.5">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-[78px] rounded-xl bg-surface-2" />
         ))}
       </div>

@@ -2,25 +2,27 @@ import { differenceInCalendarDays, differenceInMinutes, parseISO, addHours, addD
 import type { Dossier, DossierStatus } from "./types";
 
 /**
- * Seuils métier (définis avec DG) :
+ * Seuils métier :
  * - Référencement : effectif 24h EXACTES après la création du dossier
  * - QC en retard : 2 jours après le référencement sans QC faite
  * - Relance niveau 1 : 15 jours après facturation sans paiement
  * - Relance niveau 2 : 25 jours après facturation sans paiement
- * - Suivi juridique (auto) : 3 mois (90 jours) après facturation sans paiement
- *
- * Seuil ajouté (proposé par défaut, à ajuster si besoin — voir SEUIL_DESYNC_ECART_POINTS) :
- * - Risque de désynchronisation : le % de visibilité déjà consommée dépasse le
- *   % déjà payé de 25 points ou plus, AVANT que la visibilité expire totalement.
- *   Objectif : agir (relancer / menacer de couper la visibilité) pendant qu'il
- *   reste encore un levier de négociation — une fois à 100% de temps consommé
- *   sans solde, il n'y a plus aucun levier : c'est une perte réelle.
+ * - Suivi juridique : DÉCISION HUMAINE UNIQUEMENT — plus d'escalade automatique
+ *   par nombre de jours. Une seule personne doit décider de l'activer.
+ * - Risque de désynchronisation : le % de visibilité consommée dépasse le %
+ *   payé de 25 points ou plus, avant expiration totale (seuil par défaut,
+ *   ajustable — voir SEUIL_DESYNC_ECART_POINTS).
+ * - Perte totale vs récupérable : si moins de 10% du montant facturé a été
+ *   réglé au moment où la visibilité expire, on considère que le dossier
+ *   n'a jamais vraiment généré de paiement ("perte totale" — probablement
+ *   irrécupérable). Au-delà de 10%, un vrai montant reste en jeu
+ *   ("perte partielle récupérable" — encore à réclamer).
  */
 export const SEUIL_QC_RETARD_JOURS = 2;
 export const SEUIL_RELANCE_1_JOURS = 15;
 export const SEUIL_RELANCE_2_JOURS = 25;
-export const SEUIL_JURIDIQUE_JOURS = 90;
 export const SEUIL_DESYNC_ECART_POINTS = 25;
+export const SEUIL_PERTE_TOTALE_PCT_PAYE = 10;
 
 /** Référencement = 24h exactes après la création du dossier (created_at). */
 export function dateReferencement(createdAt: string): Date {
@@ -32,11 +34,34 @@ export function dateFinVisibiliteParDefaut(dateDebut: Date): Date {
   return addDays(dateDebut, 365);
 }
 
-function noVisibiliteFields() {
-  return { pctTemps: null as number | null, pctPaye: null as number | null, desyncRisque: false };
+function joursSansActionDe(d: Dossier, now: Date): number {
+  const derniereActivite = d.derniere_action_at ? parseISO(d.derniere_action_at) : parseISO(d.created_at);
+  return Math.max(0, differenceInCalendarDays(now, derniereActivite));
+}
+
+function noVisibiliteFields(joursSansAction: number | null = null) {
+  return {
+    pctTemps: null as number | null,
+    pctPaye: null as number | null,
+    desyncRisque: false,
+    joursSansAction,
+  };
 }
 
 export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatus {
+  // --- Abandon explicite : prioritaire sur tout, un humain a décidé d'arrêter ---
+  if (d.abandonne_at) {
+    return {
+      label: "Abandonné",
+      sub: `Abandonné le ${d.abandonne_at.slice(0, 10)}`,
+      color: "neutral",
+      alert: false,
+      severity: -1,
+      columnKey: "abandonne",
+      ...noVisibiliteFields(joursSansActionDe(d, now)),
+    };
+  }
+
   if (d.etape === "qc") {
     const dateRef = dateReferencement(d.created_at);
     const referenced = now >= dateRef;
@@ -103,7 +128,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
   if (d.etape === "paiement") {
     const dateFacture = d.date_facture ? parseISO(d.date_facture) : now;
     const daysSinceFacture = differenceInCalendarDays(now, dateFacture);
-    const juridiqueManuel = d.juridique_actif;
+    const joursSansAction = joursSansActionDe(d, now);
 
     // --- Indicateurs de visibilité (uniquement si les dates existent) ---
     let pctTemps: number | null = null;
@@ -122,6 +147,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
 
     const soldeDu = d.montant_facture != null && d.montant_recu < d.montant_facture;
     const perteReelle = pctTemps !== null && pctTemps >= 100 && soldeDu;
+    const perteTotale = perteReelle && (pctPaye ?? 0) < SEUIL_PERTE_TOTALE_PCT_PAYE;
     const desyncRisque =
       !perteReelle &&
       pctTemps !== null &&
@@ -129,25 +155,41 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       soldeDu &&
       pctTemps - pctPaye >= SEUIL_DESYNC_ECART_POINTS;
 
-    // --- Perte réelle : priorité absolue, pire cas possible ---
+    // --- Perte : priorité la plus haute, mais on distingue totale vs récupérable ---
     if (perteReelle) {
+      if (perteTotale) {
+        return {
+          label: "Perte totale",
+          sub: `Visibilité expirée (${Math.round(pctTemps!)}%) · ${Math.round(pctPaye ?? 0)}% payé — probablement irrécupérable`,
+          color: "perte",
+          alert: true,
+          severity: 6,
+          columnKey: "perte_totale",
+          pctTemps,
+          pctPaye,
+          desyncRisque: false,
+          joursSansAction,
+        };
+      }
       return {
-        label: "Perte réelle",
-        sub: `Visibilité expirée (${Math.round(pctTemps!)}%) · ${Math.round(pctPaye ?? 0)}% payé seulement`,
-        color: "perte",
+        label: "Perte partielle — récupérable",
+        sub: `Visibilité expirée (${Math.round(pctTemps!)}%) · ${Math.round(pctPaye ?? 0)}% payé — solde encore réclamable`,
+        color: "danger",
         alert: true,
         severity: 5,
-        columnKey: "perte",
+        columnKey: "perte_partielle",
         pctTemps,
         pctPaye,
         desyncRisque: false,
+        joursSansAction,
       };
     }
 
-    if (juridiqueManuel || daysSinceFacture >= SEUIL_JURIDIQUE_JOURS) {
+    // --- Suivi juridique : DÉCISION MANUELLE UNIQUEMENT, plus d'auto par jours ---
+    if (d.juridique_actif) {
       return {
         label: "Suivi juridique",
-        sub: `Impayé depuis ${daysSinceFacture}j`,
+        sub: `Impayé depuis ${daysSinceFacture}j · décision manuelle`,
         color: "juridique",
         alert: true,
         severity: 4,
@@ -155,6 +197,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        joursSansAction,
       };
     }
     if (daysSinceFacture >= SEUIL_RELANCE_2_JOURS) {
@@ -168,6 +211,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        joursSansAction,
       };
     }
     if (daysSinceFacture >= SEUIL_RELANCE_1_JOURS) {
@@ -181,6 +225,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        joursSansAction,
       };
     }
 
@@ -195,6 +240,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        joursSansAction,
       };
     }
 
@@ -208,6 +254,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctTemps,
       pctPaye,
       desyncRisque,
+      joursSansAction,
     };
   }
 
@@ -223,6 +270,21 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
   };
 }
 
+/**
+ * Score de priorité pour la File d'action — combine sévérité, montant en jeu
+ * et jours sans action humaine. La sévérité domine le tri (un cas plus grave
+ * passe toujours avant), puis à sévérité égale, l'ancienneté sans action et
+ * le montant départagent. Formule volontairement simple et documentée ici ;
+ * à ajuster si l'ordre obtenu ne reflète pas la réalité du terrain.
+ */
+export function scoreFileAction(d: Dossier, status: DossierStatus): number {
+  const montantReste = d.montant_facture != null ? Math.max(0, d.montant_facture - d.montant_recu) : 0;
+  const jours = Math.min(status.joursSansAction ?? 0, 180);
+  return status.severity * 1_000_000 + jours * 1_000 + Math.min(montantReste, 999_000);
+}
+
+// Kanban = uniquement le pipeline "front" (avant facturation). Le suivi de
+// paiement/relances/pertes/juridique vit désormais dans la File d'action.
 export const KANBAN_COLUMNS: {
   key: DossierStatus["columnKey"];
   title: string;
@@ -231,8 +293,5 @@ export const KANBAN_COLUMNS: {
   { key: "qc", title: "Contrôle qualité", dot: "neutral" },
   { key: "a_corriger", title: "À corriger", dot: "warning" },
   { key: "facturation", title: "Validé — à facturer", dot: "success" },
-  { key: "paiement", title: "Paiement", dot: "neutral" },
-  { key: "juridique", title: "Suivi juridique", dot: "juridique" },
-  { key: "perte", title: "Perte réelle", dot: "perte" },
   { key: "paye", title: "Payé", dot: "success" },
 ];

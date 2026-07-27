@@ -1,5 +1,6 @@
 export type Etape = "qc" | "facturation" | "paiement" | "paye";
 export type QcSousStatut = "attente" | "a_corriger" | "ok";
+export type ActionType = "appel" | "email" | "visite" | "promesse_paiement" | "autre";
 
 export interface Profile {
   id: string;
@@ -29,6 +30,13 @@ export interface Dossier {
 
   numero_facture: string | null;
   ville: string | null;
+
+  abandonne_at: string | null;
+  abandonne_par: string | null;
+  abandonne_raison: string | null;
+
+  derniere_action_at: string | null;
+  prochain_rappel: string | null;
 
   juridique_actif: boolean;
   juridique_notes: string | null;
@@ -62,6 +70,17 @@ export interface Paiement {
   created_at: string;
 }
 
+export interface ActionEntry {
+  id: string;
+  dossier_id: string;
+  type: ActionType;
+  resultat: string | null;
+  note: string | null;
+  date_rappel: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 export type StatusColor =
   | "neutral"
   | "warning"
@@ -70,15 +89,27 @@ export type StatusColor =
   | "success"
   | "perte";
 
+export type ColumnKey =
+  | "qc"
+  | "a_corriger"
+  | "facturation"
+  | "paiement"
+  | "juridique"
+  | "perte_totale"
+  | "perte_partielle"
+  | "abandonne"
+  | "paye";
+
 export interface DossierStatus {
   label: string;
   sub: string;
   color: StatusColor;
   alert: boolean;
-  severity: number; // 0 = calm, higher = more urgent (perte réelle = 5, the worst)
-  columnKey: "qc" | "a_corriger" | "facturation" | "paiement" | "juridique" | "perte" | "paye";
+  severity: number; // 0 = calme, plus haut = plus urgent
+  columnKey: ColumnKey;
   // Indicateurs de visibilité (uniquement calculés si les dates de visibilité existent)
   pctTemps: number | null; // % du temps de visibilité déjà consommé
   pctPaye: number | null; // % du montant facturé déjà réglé
-  desyncRisque: boolean; // écart important entre temps consommé et montant payé — agir avant la perte totale
+  desyncRisque: boolean; // écart important entre temps consommé et montant payé
+  joursSansAction: number | null; // jours depuis la dernière action humaine enregistrée
 }

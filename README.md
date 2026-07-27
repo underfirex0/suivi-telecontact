@@ -176,6 +176,50 @@ spams lors du tout premier test).
 
 ---
 
+## File d'action — le cœur du recouvrement (mise à jour majeure)
+
+Le suivi de paiement ne vit plus dans le Kanban (qui reste simple : QC → à
+corriger → validé → payé). Tout ce qui concerne l'argent à récupérer vit dans
+un onglet dédié **"File d'action"**, sur la page Dossiers — une liste triée,
+pas un mur de colonnes.
+
+**Tri de la file** : sévérité du cas d'abord (perte totale > perte partielle
+récupérable > relances/désynchronisation), puis montant restant dû et jours
+sans action à sévérité égale. Formule dans `scoreFileAction()` de
+`src/lib/dossier-logic.ts`, ajustable si l'ordre obtenu ne colle pas au
+terrain.
+
+**Ce qui a changé par rapport à avant :**
+
+- **Suivi juridique redevient 100% manuel.** L'escalade automatique après 90
+  jours a été retirée — un dossier n'y arrive que si quelqu'un clique
+  explicitement "Activer suivi juridique". Rien à corriger côté données
+  existantes : la logique d'affichage suffit.
+- **"Perte réelle" se divise en deux** : *Perte totale* (quasiment rien n'a
+  jamais été payé — probablement irrécupérable) et *Perte partielle
+  récupérable* (un vrai solde reste dû — encore à réclamer). Seuil par
+  défaut : moins de 10% payé = totale (`SEUIL_PERTE_TOTALE_PCT_PAYE`).
+- **Log d'actions humaines** : chaque appel/email/visite/promesse de paiement
+  se note sur le dossier (résultat, prochain rappel, qui, quand). C'est ce qui
+  fait baisser un dossier dans la file — pas un statut qui change tout seul.
+- **Abandon explicite** : un dossier ne "disparaît" jamais silencieusement.
+  Quelqu'un doit taper une raison réelle pour l'abandonner ; il reste visible
+  dans l'onglet Abandonnés, et réactivable à tout moment.
+- **Prise en charge visible** : un dossier prioritaire sans opérateur affiche
+  un badge "Non assigné" avec un bouton "Me l'assigner" en un clic — jamais
+  caché, jamais auto-assigné sans que personne ne le voie.
+- **Digest email personnalisé** : chaque personne reçoit désormais ses
+  propres dossiers prioritaires, plus la liste partagée des non-assignés — ce
+  n'est plus un broadcast identique à toute l'équipe.
+
+### Migration à exécuter
+
+`supabase/migration-004-file-action.sql` — ajoute la table `actions`, les
+champs d'abandon, et le suivi de dernière activité. Sans danger, à exécuter
+une seule fois.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,
