@@ -37,6 +37,7 @@ export interface Dossier {
 
   derniere_action_at: string | null;
   prochain_rappel: string | null;
+  dernier_type_action: ActionType | null;
 
   juridique_actif: boolean;
   juridique_notes: string | null;
@@ -111,5 +112,6 @@ export interface DossierStatus {
   pctTemps: number | null; // % du temps de visibilité déjà consommé
   pctPaye: number | null; // % du montant facturé déjà réglé
   desyncRisque: boolean; // écart important entre temps consommé et montant payé
+  promesseRompue: boolean; // le client avait promis de payer avant une date passée, toujours rien reçu
   joursSansAction: number | null; // jours depuis la dernière action humaine enregistrée
 }

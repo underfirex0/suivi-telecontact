@@ -44,8 +44,16 @@ function noVisibiliteFields(joursSansAction: number | null = null) {
     pctTemps: null as number | null,
     pctPaye: null as number | null,
     desyncRisque: false,
+    promesseRompue: false,
     joursSansAction,
   };
+}
+
+function promesseRompueDe(d: Dossier, now: Date, soldeDu: boolean): boolean {
+  if (!soldeDu) return false;
+  if (d.dernier_type_action !== "promesse_paiement") return false;
+  if (!d.prochain_rappel) return false;
+  return parseISO(d.prochain_rappel) < now;
 }
 
 export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatus {
@@ -154,6 +162,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctPaye !== null &&
       soldeDu &&
       pctTemps - pctPaye >= SEUIL_DESYNC_ECART_POINTS;
+    const promesseRompue = !perteReelle && promesseRompueDe(d, now, soldeDu);
 
     // --- Perte : priorité la plus haute, mais on distingue totale vs récupérable ---
     if (perteReelle) {
@@ -168,6 +177,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
           pctTemps,
           pctPaye,
           desyncRisque: false,
+          promesseRompue: false,
           joursSansAction,
         };
       }
@@ -181,6 +191,24 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque: false,
+        promesseRompue: false,
+        joursSansAction,
+      };
+    }
+
+    // --- Promesse de paiement non tenue : signal fort, prioritaire sur les relances génériques ---
+    if (promesseRompue) {
+      return {
+        label: "Promesse non tenue",
+        sub: `Devait payer le ${d.prochain_rappel} · rien reçu depuis`,
+        color: "danger",
+        alert: true,
+        severity: 4,
+        columnKey: "paiement",
+        pctTemps,
+        pctPaye,
+        desyncRisque,
+        promesseRompue: true,
         joursSansAction,
       };
     }
@@ -197,6 +225,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        promesseRompue: false,
         joursSansAction,
       };
     }
@@ -211,6 +240,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        promesseRompue: false,
         joursSansAction,
       };
     }
@@ -225,6 +255,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        promesseRompue: false,
         joursSansAction,
       };
     }
@@ -240,6 +271,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        promesseRompue: false,
         joursSansAction,
       };
     }
@@ -254,6 +286,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctTemps,
       pctPaye,
       desyncRisque,
+      promesseRompue: false,
       joursSansAction,
     };
   }

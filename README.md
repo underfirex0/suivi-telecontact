@@ -218,6 +218,23 @@ terrain.
 champs d'abandon, et le suivi de dernière activité. Sans danger, à exécuter
 une seule fois.
 
+`supabase/migration-005-promesse-rompue.sql` — ajoute la détection des
+promesses de paiement non tenues (nécessite migration-004 au préalable).
+
+## Filtres intelligents (File d'action)
+
+- **Chips combinables** : Perte totale, Perte récupérable, Promesse non
+  tenue, Désynchronisation, Suivi juridique, Non assigné
+- **Filtres** : opérateur (dont "Mes dossiers"), ville, montant minimum
+- **Tri** : priorité (défaut), montant décroissant, jours sans action, client
+- **Détection des promesses non tenues** : si la dernière action enregistrée
+  était une "promesse de paiement" avec une date de rappel désormais
+  dépassée, et que rien n'a été reçu depuis, le dossier remonte
+  automatiquement avec un badge dédié — un des signaux les plus utiles pour
+  le recouvrement.
+- **Charge réelle par opérateur** : la page Opérateurs affiche maintenant le
+  montant en jeu par personne, pas seulement un nombre de dossiers.
+
 ---
 
 ## Notes et limites connues

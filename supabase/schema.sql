@@ -62,6 +62,7 @@ create table if not exists public.dossiers (
 
   derniere_action_at timestamptz,
   prochain_rappel date,
+  dernier_type_action text,
 
   juridique_actif boolean not null default false,
   juridique_notes text,
@@ -232,7 +233,8 @@ begin
   update public.dossiers
   set
     derniere_action_at = now(),
-    prochain_rappel = new.date_rappel
+    prochain_rappel = new.date_rappel,
+    dernier_type_action = new.type
   where id = new.dossier_id;
   return new;
 end;
