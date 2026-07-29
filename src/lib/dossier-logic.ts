@@ -1,5 +1,5 @@
 import { differenceInCalendarDays, differenceInMinutes, parseISO, addHours, addDays } from "date-fns";
-import type { Dossier, DossierStatus } from "./types";
+import type { Dossier, DossierStatus, JuridiqueEtape } from "./types";
 
 /**
  * Seuils métier :
@@ -367,3 +367,15 @@ export const KANBAN_COLUMNS: {
   { key: "facturation", title: "Validé — à facturer", dot: "success" },
   { key: "paye", title: "Payé", dot: "success" },
 ];
+
+export const JURIDIQUE_ETAPES: { key: JuridiqueEtape; label: string; color: DossierStatus["color"] }[] = [
+  { key: "mise_en_demeure", label: "Mise en demeure envoyée", color: "warning" },
+  { key: "assignation", label: "Assignation déposée", color: "danger" },
+  { key: "jugement", label: "Jugement obtenu", color: "juridique" },
+  { key: "execution", label: "Exécution en cours", color: "juridique" },
+  { key: "clos", label: "Clôturé", color: "success" },
+];
+
+export function juridiqueEtapeLabel(etape: JuridiqueEtape | null): string {
+  return JURIDIQUE_ETAPES.find((e) => e.key === etape)?.label ?? "Mise en demeure envoyée";
+}

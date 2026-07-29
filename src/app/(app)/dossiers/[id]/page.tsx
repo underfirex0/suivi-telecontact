@@ -13,6 +13,7 @@ import {
   UserPlus,
   PhoneCall,
   Ban,
+  Scale,
 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
@@ -26,11 +27,11 @@ import { AjouterPaiementDialog } from "@/components/ajouter-paiement-dialog";
 import { ActionLogDialog } from "@/components/action-log-dialog";
 import { AbandonDialog } from "@/components/abandon-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
-import { analyzeDossier, dateReferencement } from "@/lib/dossier-logic";
+import { analyzeDossier, dateReferencement, JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
 import { formatMontant, formatDate } from "@/lib/utils";
 import { STATUS_HEX } from "@/lib/status-colors";
 import { useNow } from "@/lib/use-now";
-import type { HistoriqueEntry, Paiement, ActionEntry } from "@/lib/types";
+import type { HistoriqueEntry, Paiement, ActionEntry, JuridiqueEtape } from "@/lib/types";
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
   appel: "Appel",
@@ -55,6 +56,7 @@ export default function DossierDetailPage() {
     markFacture,
     markPaye,
     toggleJuridique,
+    updateJuridiqueEtape,
     revertQcCorrection,
     revertValidation,
     revertFacturation,
@@ -81,6 +83,9 @@ export default function DossierDetailPage() {
   const [numeroFacture, setNumeroFacture] = useState("");
   const [notes, setNotes] = useState("");
   const [juridiqueNotes, setJuridiqueNotes] = useState("");
+  const [avocatReferent, setAvocatReferent] = useState("");
+  const [referenceTribunal, setReferenceTribunal] = useState("");
+  const [montantJugement, setMontantJugement] = useState("");
   const [operateurId, setOperateurId] = useState("");
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
@@ -104,6 +109,9 @@ export default function DossierDetailPage() {
       setNumeroFacture(dossier.numero_facture ?? "");
       setNotes(dossier.notes ?? "");
       setJuridiqueNotes(dossier.juridique_notes ?? "");
+      setAvocatReferent(dossier.avocat_referent ?? "");
+      setReferenceTribunal(dossier.reference_tribunal ?? "");
+      setMontantJugement(dossier.montant_jugement != null ? String(dossier.montant_jugement) : "");
       setOperateurId(dossier.operateur_id ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,6 +179,9 @@ export default function DossierDetailPage() {
         notes: notes.trim() || null,
         operateur_id: operateurId || null,
         juridique_notes: juridiqueNotes.trim() || null,
+        avocat_referent: avocatReferent.trim() || null,
+        reference_tribunal: referenceTribunal.trim() || null,
+        montant_jugement: montantJugement ? Number(montantJugement) : null,
       },
       "Informations du dossier modifiées."
     );
@@ -456,7 +467,89 @@ export default function DossierDetailPage() {
             </div>
           )}
 
-          {dossier.etape === "paiement" && (
+          {dossier.etape === "paiement" && dossier.juridique_actif && (
+            <div className="mb-5 rounded-xl border border-juridique/30 bg-juridique-tint/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2 font-display text-[13.5px] font-semibold text-juridique">
+                  <Scale size={15} />
+                  Suivi juridique
+                </div>
+                <button
+                  onClick={() => router.push("/juridique")}
+                  className="text-[11.5px] font-semibold text-juridique hover:underline"
+                >
+                  Voir tous les dossiers juridiques →
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <Label>Étape</Label>
+                <Select
+                  value={dossier.juridique_etape ?? "mise_en_demeure"}
+                  onValueChange={(v) => runAction(() => updateJuridiqueEtape(dossier.id, v as JuridiqueEtape))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {JURIDIQUE_ETAPES.map((e) => (
+                      <SelectItem key={e.key} value={e.key}>
+                        {e.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="avocat">Avocat référent</Label>
+                  <Input id="avocat" value={avocatReferent} onChange={(e) => setAvocatReferent(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="tribunal">Référence tribunal</Label>
+                  <Input id="tribunal" value={referenceTribunal} onChange={(e) => setReferenceTribunal(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <Label htmlFor="mjugement">Montant jugé (si différent du montant facturé)</Label>
+                <Input
+                  id="mjugement"
+                  type="number"
+                  step="0.01"
+                  value={montantJugement}
+                  onChange={(e) => setMontantJugement(e.target.value)}
+                  placeholder="ex: 12000.00"
+                />
+              </div>
+
+              <div className="mb-3 grid grid-cols-3 gap-3 text-[11.5px] text-ink-2">
+                <div>
+                  <div className="text-ink-3">Mise en demeure</div>
+                  <div className="font-mono font-semibold text-ink">{formatDate(dossier.date_mise_en_demeure)}</div>
+                </div>
+                <div>
+                  <div className="text-ink-3">Assignation</div>
+                  <div className="font-mono font-semibold text-ink">{formatDate(dossier.date_assignation)}</div>
+                </div>
+                <div>
+                  <div className="text-ink-3">Jugement</div>
+                  <div className="font-mono font-semibold text-ink">{formatDate(dossier.date_jugement)}</div>
+                </div>
+              </div>
+
+              <Label htmlFor="jnotes">Notes juridiques</Label>
+              <Textarea
+                id="jnotes"
+                value={juridiqueNotes}
+                onChange={(e) => setJuridiqueNotes(e.target.value)}
+                placeholder="ex: audience prévue le..."
+              />
+            </div>
+          )}
+
+          {dossier.etape === "paiement" && !dossier.juridique_actif && (
             <div className="mb-4">
               <Label htmlFor="jnotes">Notes suivi juridique / relances</Label>
               <Textarea

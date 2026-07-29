@@ -1,6 +1,7 @@
 export type Etape = "qc" | "facturation" | "paiement" | "paye";
 export type QcSousStatut = "attente" | "a_corriger" | "ok";
 export type ActionType = "appel" | "email" | "visite" | "promesse_paiement" | "autre";
+export type JuridiqueEtape = "mise_en_demeure" | "assignation" | "jugement" | "execution" | "clos";
 
 export interface Profile {
   id: string;
@@ -41,6 +42,14 @@ export interface Dossier {
 
   juridique_actif: boolean;
   juridique_notes: string | null;
+  juridique_etape: JuridiqueEtape | null;
+  juridique_etape_maj_at: string | null;
+  date_mise_en_demeure: string | null;
+  date_assignation: string | null;
+  date_jugement: string | null;
+  montant_jugement: number | null;
+  avocat_referent: string | null;
+  reference_tribunal: string | null;
 
   archived_at: string | null;
   archived_by: string | null;

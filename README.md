@@ -275,6 +275,39 @@ Aucune migration nécessaire — utilise les champs déjà en place.
 
 ---
 
+## Suivi juridique — un vrai processus, plus un simple interrupteur
+
+Nouvelle page **Suivi juridique** (menu de gauche) : un dossier en contentieux
+suit désormais 5 étapes réelles au lieu d'un simple oui/non.
+
+**Étapes** : Mise en demeure envoyée → Assignation déposée → Jugement obtenu
+→ Exécution en cours → Clôturé. Chaque changement d'étape horodate
+automatiquement la date correspondante et s'inscrit dans l'historique.
+
+**Champs structurés par dossier** : avocat référent, référence tribunal,
+montant jugé (souvent différent du montant facturé une fois le jugement
+rendu), dates clés.
+
+**La page dédiée montre** :
+- Totaux financiers : montant réclamé, montant jugé, déjà récupéré
+- Filtres : étape, avocat, ville
+- Tri par ancienneté dans l'étape actuelle — pour repérer les dossiers
+  bloqués depuis des mois sans progression, pas seulement les nouveaux
+- Changement d'étape en un clic directement depuis la liste
+
+La fiche dossier affiche ce même panneau structuré dès que le suivi
+juridique est activé (le bouton "Activer suivi juridique" existant
+initialise automatiquement l'étape à "Mise en demeure envoyée").
+
+### Migration à exécuter
+
+`supabase/migration-006-juridique-structure.sql` — ajoute les champs
+structurés. Sans danger, les dossiers déjà en suivi juridique passent
+automatiquement en "Mise en demeure envoyée" par défaut (modifiable
+ensuite).
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,

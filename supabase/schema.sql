@@ -66,6 +66,15 @@ create table if not exists public.dossiers (
 
   juridique_actif boolean not null default false,
   juridique_notes text,
+  juridique_etape text default 'mise_en_demeure'
+    check (juridique_etape in ('mise_en_demeure', 'assignation', 'jugement', 'execution', 'clos')),
+  juridique_etape_maj_at timestamptz,
+  date_mise_en_demeure date,
+  date_assignation date,
+  date_jugement date,
+  montant_jugement numeric(12,2),
+  avocat_referent text,
+  reference_tribunal text,
 
   archived_at timestamptz,
   archived_by uuid references public.profiles(id) on delete set null,

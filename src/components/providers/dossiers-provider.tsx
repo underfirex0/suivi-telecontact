@@ -11,8 +11,9 @@ import {
 import { useRouter } from "next/navigation";
 import { format, addHours, addDays } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
-import type { Dossier, HistoriqueEntry, Profile, Paiement, ActionEntry, ActionType } from "@/lib/types";
+import type { Dossier, HistoriqueEntry, Profile, Paiement, ActionEntry, ActionType, JuridiqueEtape } from "@/lib/types";
 import { todayISO } from "@/lib/utils";
+import { JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
 
 interface DossiersContextValue {
   dossiers: Dossier[];
@@ -28,6 +29,7 @@ interface DossiersContextValue {
   markFacture: (id: string, date: string, montant: number | null) => Promise<void>;
   markPaye: (id: string) => Promise<void>;
   toggleJuridique: (id: string) => Promise<void>;
+  updateJuridiqueEtape: (id: string, etape: JuridiqueEtape, dateEtape?: string) => Promise<void>;
   revertQcCorrection: (id: string) => Promise<void>;
   revertValidation: (id: string) => Promise<void>;
   revertFacturation: (id: string) => Promise<void>;
@@ -263,11 +265,34 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
       const next = !d.juridique_actif;
       await updateDossier(
         id,
-        { juridique_actif: next },
-        next ? "Suivi juridique activé manuellement." : "Suivi juridique retiré."
+        next
+          ? {
+              juridique_actif: true,
+              juridique_etape: "mise_en_demeure",
+              juridique_etape_maj_at: new Date().toISOString(),
+            }
+          : { juridique_actif: false },
+        next ? "Suivi juridique activé manuellement — étape : Mise en demeure envoyée." : "Suivi juridique retiré."
       );
     },
     [dossiers, updateDossier]
+  );
+
+  const updateJuridiqueEtape = useCallback(
+    async (id: string, etape: JuridiqueEtape, dateEtape?: string) => {
+      const label = JURIDIQUE_ETAPES.find((e) => e.key === etape)?.label ?? etape;
+      const dateField: Partial<Dossier> = {};
+      const stamp = dateEtape || todayISO();
+      if (etape === "mise_en_demeure") dateField.date_mise_en_demeure = stamp;
+      if (etape === "assignation") dateField.date_assignation = stamp;
+      if (etape === "jugement") dateField.date_jugement = stamp;
+      await updateDossier(
+        id,
+        { juridique_etape: etape, juridique_etape_maj_at: new Date().toISOString(), ...dateField },
+        `Suivi juridique — nouvelle étape : ${label}.`
+      );
+    },
+    [updateDossier]
   );
 
   // ---- Annulations (corriger une erreur de manipulation, sans supprimer le dossier) ----
@@ -475,6 +500,7 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     markFacture,
     markPaye,
     toggleJuridique,
+    updateJuridiqueEtape,
     revertQcCorrection,
     revertValidation,
     revertFacturation,
