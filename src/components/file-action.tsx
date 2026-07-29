@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, PhoneCall, Ban, PartyPopper, X } from "lucide-react";
+import { UserPlus, PhoneCall, Ban, PartyPopper, X, MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -14,7 +14,15 @@ import { analyzeDossier, scoreFileAction } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { formatMontant, initials, cn } from "@/lib/utils";
 import { STATUS_HEX } from "@/lib/status-colors";
-import type { Dossier, Profile, ColumnKey } from "@/lib/types";
+import type { Dossier, Profile, ColumnKey, ActionEntry } from "@/lib/types";
+
+const TYPE_LABELS: Record<string, string> = {
+  appel: "Appel",
+  email: "Email",
+  visite: "Visite",
+  promesse_paiement: "Promesse",
+  autre: "Autre",
+};
 
 type Chip = "perte_totale" | "perte_partielle" | "promesse_rompue" | "desync" | "juridique" | "non_assigne";
 
@@ -32,9 +40,10 @@ type SortMode = "priorite" | "montant" | "jours" | "client";
 export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profiles: Profile[] }) {
   const router = useRouter();
   const now = useNow();
-  const { addAction, claimDossier, abandonDossier, currentProfile } = useDossiers();
+  const { addAction, claimDossier, abandonDossier, currentProfile, fetchAllActions } = useDossiers();
   const [actionDossier, setActionDossier] = useState<Dossier | null>(null);
   const [abandonDossierTarget, setAbandonDossierTarget] = useState<Dossier | null>(null);
+  const [lastActionByDossier, setLastActionByDossier] = useState<Map<string, ActionEntry>>(new Map());
 
   const [activeChips, setActiveChips] = useState<Set<Chip>>(new Set());
   const [operateurFilter, setOperateurFilter] = useState("all");
@@ -43,6 +52,20 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
   const [sortMode, setSortMode] = useState<SortMode>("priorite");
 
   const profileMap = useMemo(() => new Map(profiles.map((p) => [p.id, p.full_name])), [profiles]);
+
+  async function loadLastActions() {
+    const all = await fetchAllActions();
+    const map = new Map<string, ActionEntry>();
+    for (const act of all) {
+      if (!map.has(act.dossier_id)) map.set(act.dossier_id, act); // déjà triées du plus récent au plus ancien
+    }
+    setLastActionByDossier(map);
+  }
+
+  useEffect(() => {
+    loadLastActions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const villes = useMemo(() => {
     const set = new Set<string>();
@@ -259,6 +282,28 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                         </span>
                       )}
                     </div>
+                    {lastActionByDossier.has(d.id) && (
+                      <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-surface-2 px-2.5 py-2 text-[11.5px] text-ink-2">
+                        <MessageSquareText size={13} className="mt-0.5 flex-shrink-0 text-ink-3" />
+                        <div>
+                          <span className="font-semibold text-ink">
+                            {TYPE_LABELS[lastActionByDossier.get(d.id)!.type] ?? lastActionByDossier.get(d.id)!.type}
+                          </span>
+                          {lastActionByDossier.get(d.id)!.resultat && (
+                            <span> — {lastActionByDossier.get(d.id)!.resultat}</span>
+                          )}
+                          <span className="text-ink-3">
+                            {" "}
+                            ·{" "}
+                            {lastActionByDossier.get(d.id)!.created_by
+                              ? profileMap.get(lastActionByDossier.get(d.id)!.created_by!) ?? "Inconnu"
+                              : "Inconnu"}
+                            ,{" "}
+                            {new Date(lastActionByDossier.get(d.id)!.created_at).toLocaleDateString("fr-FR")}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col items-end gap-2">
@@ -290,9 +335,10 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
         <ActionLogDialog
           open={!!actionDossier}
           onOpenChange={(open) => !open && setActionDossier(null)}
-          onConfirm={(type, resultat, note, dateRappel) =>
-            addAction(actionDossier.id, type, resultat, note, dateRappel)
-          }
+          onConfirm={async (type, resultat, note, dateRappel) => {
+            await addAction(actionDossier.id, type, resultat, note, dateRappel);
+            await loadLastActions();
+          }}
         />
       )}
       {abandonDossierTarget && (
