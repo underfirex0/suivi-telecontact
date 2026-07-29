@@ -37,6 +37,7 @@ interface DossiersContextValue {
   addPaiement: (dossierId: string, montant: number, datePaiement: string, note?: string) => Promise<void>;
   deletePaiement: (id: string, dossierId: string) => Promise<void>;
   fetchActions: (dossierId: string) => Promise<ActionEntry[]>;
+  fetchAllActions: () => Promise<ActionEntry[]>;
   addAction: (
     dossierId: string,
     type: ActionType,
@@ -377,6 +378,15 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [supabase]
   );
 
+  const fetchAllActions = useCallback(async () => {
+    const { data } = await supabase
+      .from("actions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1000);
+    return (data as ActionEntry[]) ?? [];
+  }, [supabase]);
+
   const ACTION_LABELS: Record<ActionType, string> = {
     appel: "Appel",
     email: "Email",
@@ -474,6 +484,7 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     addPaiement,
     deletePaiement,
     fetchActions,
+    fetchAllActions,
     addAction,
     claimDossier,
     abandonDossier,

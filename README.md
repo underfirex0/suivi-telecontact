@@ -237,6 +237,24 @@ promesses de paiement non tenues (nécessite migration-004 au préalable).
 
 ---
 
+## Journal d'activité — visibilité sur ce que l'équipe fait réellement
+
+Nouvelle page **Activité** (menu de gauche) : toutes les actions
+(appels/emails/visites/promesses) enregistrées par toute l'équipe, sur tous
+les dossiers, dans un seul journal filtrable.
+
+- **Filtres** : période (aujourd'hui / 7j / 30j / tout), opérateur (dont
+  "Moi"), type d'action, recherche par client, et un filtre dédié
+  "Promesses non tenues" pour auditer spécifiquement les engagements clients
+  rompus.
+- **Résumé en haut** : total filtré + répartition par type d'action.
+- **Activité de l'équipe** (encart latéral) : nombre d'actions par personne
+  sur la période sélectionnée — visibilité factuelle sur qui fait quoi, sans
+  jugement, juste des chiffres.
+- Cliquer une ligne ouvre directement le dossier concerné.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,
