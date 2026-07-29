@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, PhoneCall, Ban, PartyPopper, X, MessageSquareText } from "lucide-react";
+import { UserPlus, PhoneCall, Ban, PartyPopper, X, MessageSquareText, Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -12,7 +12,7 @@ import { AbandonDialog } from "@/components/abandon-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, scoreFileAction } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
-import { formatMontant, initials, cn } from "@/lib/utils";
+import { formatMontant, formatDate, initials, cn } from "@/lib/utils";
 import { STATUS_HEX } from "@/lib/status-colors";
 import type { Dossier, Profile, ColumnKey, ActionEntry } from "@/lib/types";
 
@@ -24,7 +24,7 @@ const TYPE_LABELS: Record<string, string> = {
   autre: "Autre",
 };
 
-type Chip = "perte_totale" | "perte_partielle" | "promesse_rompue" | "desync" | "juridique" | "non_assigne";
+type Chip = "perte_totale" | "perte_partielle" | "promesse_rompue" | "desync" | "juridique" | "non_affecte";
 
 const CHIP_LABELS: Record<Chip, string> = {
   perte_totale: "Perte totale",
@@ -32,10 +32,11 @@ const CHIP_LABELS: Record<Chip, string> = {
   promesse_rompue: "Promesse non tenue",
   desync: "Désynchronisation",
   juridique: "Suivi juridique",
-  non_assigne: "Non assigné",
+  non_affecte: "Non affecté",
 };
 
 type SortMode = "priorite" | "montant" | "jours" | "client";
+type StaleMode = "all" | "3" | "7" | "15" | "30";
 
 export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profiles: Profile[] }) {
   const router = useRouter();
@@ -48,6 +49,8 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
   const [activeChips, setActiveChips] = useState<Set<Chip>>(new Set());
   const [operateurFilter, setOperateurFilter] = useState("all");
   const [villeFilter, setVilleFilter] = useState("all");
+  const [commercialFilter, setCommercialFilter] = useState("all");
+  const [staleFilter, setStaleFilter] = useState<StaleMode>("all");
   const [montantMin, setMontantMin] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("priorite");
 
@@ -73,6 +76,12 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
     return Array.from(set).sort();
   }, [dossiers]);
 
+  const commerciaux = useMemo(() => {
+    const set = new Set<string>();
+    dossiers.forEach((d) => d.commercial && set.add(d.commercial));
+    return Array.from(set).sort();
+  }, [dossiers]);
+
   const allItems = useMemo(() => {
     return dossiers
       .filter((d) => d.etape === "paiement")
@@ -90,7 +99,9 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
   }
 
   function matchesChip(columnKey: ColumnKey, promesseRompue: boolean, desyncRisque: boolean): boolean {
-    if (activeChips.size === 0) return true;
+    const statusChips = new Set(["perte_totale", "perte_partielle", "promesse_rompue", "desync", "juridique"]);
+    const activeStatusChips = Array.from(activeChips).filter((c) => statusChips.has(c));
+    if (activeStatusChips.length === 0) return true;
     if (activeChips.has("perte_totale") && columnKey === "perte_totale") return true;
     if (activeChips.has("perte_partielle") && columnKey === "perte_partielle") return true;
     if (activeChips.has("promesse_rompue") && promesseRompue) return true;
@@ -101,11 +112,13 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
 
   const items = useMemo(() => {
     let list = allItems.filter(({ d, a }) => {
-      if (activeChips.has("non_assigne") && d.operateur_id) return false;
+      if (activeChips.has("non_affecte") && d.operateur_id) return false;
       if (!matchesChip(a.columnKey, a.promesseRompue, a.desyncRisque)) return false;
       if (operateurFilter === "moi" && d.operateur_id !== currentProfile?.id) return false;
       if (operateurFilter !== "all" && operateurFilter !== "moi" && d.operateur_id !== operateurFilter) return false;
       if (villeFilter !== "all" && d.ville !== villeFilter) return false;
+      if (commercialFilter !== "all" && d.commercial !== commercialFilter) return false;
+      if (staleFilter !== "all" && (a.joursSansAction ?? 0) < Number(staleFilter)) return false;
       const reste = Math.max(0, (d.montant_facture ?? 0) - d.montant_recu);
       if (montantMin && reste < Number(montantMin)) return false;
       return true;
@@ -127,22 +140,39 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
     });
 
     return list;
-  }, [allItems, activeChips, operateurFilter, villeFilter, montantMin, sortMode, currentProfile]);
+  }, [
+    allItems,
+    activeChips,
+    operateurFilter,
+    villeFilter,
+    commercialFilter,
+    staleFilter,
+    montantMin,
+    sortMode,
+    currentProfile,
+  ]);
 
   const hasActiveFilters =
-    activeChips.size > 0 || operateurFilter !== "all" || villeFilter !== "all" || !!montantMin;
+    activeChips.size > 0 ||
+    operateurFilter !== "all" ||
+    villeFilter !== "all" ||
+    commercialFilter !== "all" ||
+    staleFilter !== "all" ||
+    !!montantMin;
 
   function resetFilters() {
     setActiveChips(new Set());
     setOperateurFilter("all");
     setVilleFilter("all");
+    setCommercialFilter("all");
+    setStaleFilter("all");
     setMontantMin("");
   }
 
   return (
     <div>
-      {/* Barre de filtres intelligents */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      {/* Ligne 1 — filtres de statut (ce qui ne va pas) */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {(Object.keys(CHIP_LABELS) as Chip[]).map((chip) => (
           <button
             key={chip}
@@ -159,9 +189,10 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
         ))}
       </div>
 
+      {/* Ligne 2 — affiner (qui, où, combien, depuis quand) */}
       <div className="mb-5 flex flex-wrap items-center gap-2.5">
         <Select value={operateurFilter} onValueChange={setOperateurFilter}>
-          <SelectTrigger className="w-[170px]">
+          <SelectTrigger className="w-[160px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -177,7 +208,7 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
 
         {villes.length > 0 && (
           <Select value={villeFilter} onValueChange={setVilleFilter}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -191,16 +222,45 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
           </Select>
         )}
 
+        {commerciaux.length > 0 && (
+          <Select value={commercialFilter} onValueChange={setCommercialFilter}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les commerciaux</SelectItem>
+              {commerciaux.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <Select value={staleFilter} onValueChange={(v) => setStaleFilter(v as StaleMode)}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Sans action : tous délais</SelectItem>
+            <SelectItem value="3">Sans action 3j+</SelectItem>
+            <SelectItem value="7">Sans action 7j+</SelectItem>
+            <SelectItem value="15">Sans action 15j+</SelectItem>
+            <SelectItem value="30">Sans action 30j+</SelectItem>
+          </SelectContent>
+        </Select>
+
         <Input
           type="number"
           placeholder="Montant min (MAD)"
           value={montantMin}
           onChange={(e) => setMontantMin(e.target.value)}
-          className="w-[160px]"
+          className="w-[150px]"
         />
 
         <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
-          <SelectTrigger className="w-[190px]">
+          <SelectTrigger className="w-[185px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -243,6 +303,11 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
           {items.map(({ d, a }) => {
             const reste = Math.max(0, (d.montant_facture ?? 0) - d.montant_recu);
             const operateurName = d.operateur_id ? profileMap.get(d.operateur_id) : null;
+            const lastAction = lastActionByDossier.get(d.id);
+            const sousLigne = [d.offre, d.commercial ? `Commercial : ${d.commercial}` : null]
+              .filter(Boolean)
+              .join(" · ");
+
             return (
               <div
                 key={d.id}
@@ -255,7 +320,7 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                       <Badge color={a.color}>{a.label}</Badge>
                       {!operateurName && (
                         <span className="rounded-full bg-warn-tint px-2 py-0.5 text-[10.5px] font-bold text-warn">
-                          Non assigné
+                          Non affecté
                         </span>
                       )}
                       {d.ville && (
@@ -264,8 +329,10 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                         </span>
                       )}
                     </div>
+
                     <div className="text-[14px] font-semibold text-ink">{d.client_nom}</div>
-                    <div className="text-[12px] text-ink-2">{d.offre || "—"}</div>
+                    {sousLigne && <div className="text-[12px] text-ink-2">{sousLigne}</div>}
+
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-ink-3">
                       <span>
                         {a.joursSansAction != null && a.joursSansAction > 0
@@ -282,24 +349,52 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                         </span>
                       )}
                     </div>
-                    {lastActionByDossier.has(d.id) && (
+
+                    {(a.pctTemps != null || a.pctPaye != null) && (
+                      <div className="mt-2 flex items-center gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-ink-3">Temps</span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-2">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.min(100, a.pctTemps ?? 0)}%`,
+                                backgroundColor: (a.pctTemps ?? 0) >= 100 ? STATUS_HEX.perte : STATUS_HEX.neutral,
+                              }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] text-ink-3">
+                            {a.pctTemps != null ? Math.round(a.pctTemps) : 0}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-ink-3">Payé</span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-2">
+                            <div
+                              className="h-full rounded-full bg-success"
+                              style={{ width: `${Math.min(100, a.pctPaye ?? 0)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] text-ink-3">
+                            {a.pctPaye != null ? Math.round(a.pctPaye) : 0}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {lastAction && (
                       <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-surface-2 px-2.5 py-2 text-[11.5px] text-ink-2">
                         <MessageSquareText size={13} className="mt-0.5 flex-shrink-0 text-ink-3" />
                         <div>
                           <span className="font-semibold text-ink">
-                            {TYPE_LABELS[lastActionByDossier.get(d.id)!.type] ?? lastActionByDossier.get(d.id)!.type}
+                            {TYPE_LABELS[lastAction.type] ?? lastAction.type}
                           </span>
-                          {lastActionByDossier.get(d.id)!.resultat && (
-                            <span> — {lastActionByDossier.get(d.id)!.resultat}</span>
-                          )}
+                          {lastAction.resultat && <span> — {lastAction.resultat}</span>}
                           <span className="text-ink-3">
                             {" "}
                             ·{" "}
-                            {lastActionByDossier.get(d.id)!.created_by
-                              ? profileMap.get(lastActionByDossier.get(d.id)!.created_by!) ?? "Inconnu"
-                              : "Inconnu"}
-                            ,{" "}
-                            {new Date(lastActionByDossier.get(d.id)!.created_at).toLocaleDateString("fr-FR")}
+                            {lastAction.created_by ? profileMap.get(lastAction.created_by) ?? "Inconnu" : "Inconnu"},{" "}
+                            {new Date(lastAction.created_at).toLocaleDateString("fr-FR")}
                           </span>
                         </div>
                       </div>
@@ -308,11 +403,21 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
 
                   <div className="flex flex-col items-end gap-2">
                     <div className="font-mono text-[15px] font-bold text-ink">{formatMontant(reste)}</div>
-                    <div className="flex gap-1.5">
+                    <div className="text-right text-[10.5px] text-ink-3">
+                      sur {formatMontant(d.montant_facture)}
+                    </div>
+                    {d.numero_facture && (
+                      <div className="flex items-center gap-1 text-[10.5px] text-ink-3">
+                        <Receipt size={10} />
+                        N° {d.numero_facture}
+                        {d.date_facture && ` · ${formatDate(d.date_facture)}`}
+                      </div>
+                    )}
+                    <div className="mt-1 flex gap-1.5">
                       {!d.operateur_id && (
                         <Button variant="secondary" onClick={() => claimDossier(d.id)}>
                           <UserPlus size={13} />
-                          Me l&apos;assigner
+                          Me l&apos;affecter
                         </Button>
                       )}
                       <Button variant="primary" onClick={() => setActionDossier(d)}>

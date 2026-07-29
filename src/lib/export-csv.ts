@@ -35,7 +35,7 @@ export function exportDossiersToCsv(dossiers: Dossier[], profiles: Profile[]) {
     "Abandonné",
     "Raison abandon",
     "Date paiement",
-    "Opérateur assigné",
+    "Opérateur affecté",
     "Suivi juridique",
     "Notes",
   ];

@@ -153,7 +153,7 @@ export function NewDossierDialog({
               />
             </div>
             <div>
-              <Label>Opérateur assigné</Label>
+              <Label>Opérateur affecté</Label>
               <Select value={operateurId} onValueChange={setOperateurId}>
                 <SelectTrigger>
                   <SelectValue placeholder="— Aucun —" />

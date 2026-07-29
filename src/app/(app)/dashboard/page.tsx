@@ -137,7 +137,7 @@ export default function DashboardPage() {
               <div className="mb-3 flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-tint px-4 py-3 text-[13px] font-semibold text-warn">
                 <UserX size={15} />
                 {nonAssignes.length} dossier{nonAssignes.length > 1 ? "s" : ""} prioritaire
-                {nonAssignes.length > 1 ? "s" : ""} sans opérateur assigné.
+                {nonAssignes.length > 1 ? "s" : ""} sans opérateur affecté.
               </div>
             )}
 
@@ -186,7 +186,7 @@ export default function DashboardPage() {
                           {a.joursSansAction != null && a.joursSansAction > 0
                             ? `${a.joursSansAction}j sans action`
                             : "Aucune action enregistrée"}
-                          {!d.operateur_id && " · non assigné"}
+                          {!d.operateur_id && " · non affecté"}
                         </div>
                       </div>
                       <div className="whitespace-nowrap font-mono text-[12.5px] font-semibold text-ink">

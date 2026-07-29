@@ -83,7 +83,7 @@ export function buildDigestEmailHtml(
         </tr>
       `
       : section("Vos dossiers prioritaires", mesDossiers, appUrl) +
-        section("Non assignés — à prendre en charge", nonAssignes, appUrl);
+        section("Non affectés — à prendre en charge", nonAssignes, appUrl);
 
   return `
   <!DOCTYPE html>

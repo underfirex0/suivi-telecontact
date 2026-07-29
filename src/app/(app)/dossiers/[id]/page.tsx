@@ -281,7 +281,7 @@ export default function DossierDetailPage() {
               <Input id="d-facture" value={numeroFacture} onChange={(e) => setNumeroFacture(e.target.value)} />
             </div>
             <div>
-              <Label>Opérateur assigné</Label>
+              <Label>Opérateur affecté</Label>
               <div className="flex gap-2">
                 <div className="flex-1">
                   <Select value={operateurId} onValueChange={setOperateurId}>
