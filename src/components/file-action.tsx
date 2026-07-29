@@ -24,7 +24,14 @@ const TYPE_LABELS: Record<string, string> = {
   autre: "Autre",
 };
 
-type Chip = "perte_totale" | "perte_partielle" | "promesse_rompue" | "desync" | "juridique" | "non_affecte";
+type Chip =
+  | "perte_totale"
+  | "perte_partielle"
+  | "promesse_rompue"
+  | "desync"
+  | "juridique"
+  | "non_affecte"
+  | "rappel_du";
 
 const CHIP_LABELS: Record<Chip, string> = {
   perte_totale: "Perte totale",
@@ -33,6 +40,7 @@ const CHIP_LABELS: Record<Chip, string> = {
   desync: "Désynchronisation",
   juridique: "Suivi juridique",
   non_affecte: "Non affecté",
+  rappel_du: "Rappel dû",
 };
 
 type SortMode = "priorite" | "montant" | "jours" | "client";
@@ -98,8 +106,20 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
     });
   }
 
-  function matchesChip(columnKey: ColumnKey, promesseRompue: boolean, desyncRisque: boolean): boolean {
-    const statusChips = new Set(["perte_totale", "perte_partielle", "promesse_rompue", "desync", "juridique"]);
+  function matchesChip(
+    columnKey: ColumnKey,
+    promesseRompue: boolean,
+    desyncRisque: boolean,
+    rappelDu: boolean
+  ): boolean {
+    const statusChips = new Set([
+      "perte_totale",
+      "perte_partielle",
+      "promesse_rompue",
+      "desync",
+      "juridique",
+      "rappel_du",
+    ]);
     const activeStatusChips = Array.from(activeChips).filter((c) => statusChips.has(c));
     if (activeStatusChips.length === 0) return true;
     if (activeChips.has("perte_totale") && columnKey === "perte_totale") return true;
@@ -107,13 +127,14 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
     if (activeChips.has("promesse_rompue") && promesseRompue) return true;
     if (activeChips.has("desync") && desyncRisque) return true;
     if (activeChips.has("juridique") && columnKey === "juridique") return true;
+    if (activeChips.has("rappel_du") && rappelDu) return true;
     return false;
   }
 
   const items = useMemo(() => {
     let list = allItems.filter(({ d, a }) => {
       if (activeChips.has("non_affecte") && d.operateur_id) return false;
-      if (!matchesChip(a.columnKey, a.promesseRompue, a.desyncRisque)) return false;
+      if (!matchesChip(a.columnKey, a.promesseRompue, a.desyncRisque, a.rappelDu)) return false;
       if (operateurFilter === "moi" && d.operateur_id !== currentProfile?.id) return false;
       if (operateurFilter !== "all" && operateurFilter !== "moi" && d.operateur_id !== operateurFilter) return false;
       if (villeFilter !== "all" && d.ville !== villeFilter) return false;
@@ -339,7 +360,11 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                           ? `${a.joursSansAction}j sans action`
                           : "Aucune action enregistrée"}
                       </span>
-                      {d.prochain_rappel && <span>Rappel prévu le {d.prochain_rappel}</span>}
+                      {d.prochain_rappel && (
+                        <span className={a.rappelDu ? "font-semibold text-warn" : ""}>
+                          Rappel {a.rappelDu ? "dû" : "prévu"} le {d.prochain_rappel}
+                        </span>
+                      )}
                       {operateurName && (
                         <span className="flex items-center gap-1.5">
                           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-tint text-[8.5px] font-bold text-brand">

@@ -255,6 +255,26 @@ les dossiers, dans un seul journal filtrable.
 
 ---
 
+## Rappels dus — plus rien n'est oublié
+
+Chaque fois qu'un rappel est enregistré (via "Enregistrer une action" ou une
+promesse de paiement), la date prévue vit maintenant activement dans le
+système au lieu de rester une simple date silencieuse :
+
+- **Dès que la date arrive** (aujourd'hui ou avant), le dossier devient
+  automatiquement une alerte — même s'il n'avait aucun autre problème
+  (pas en relance, pas en désync, rien). Un rappel oublié n'est plus invisible.
+- **Bandeau sur le tableau de bord** : "X rappels prévus aujourd'hui ou en
+  retard", visible dès l'ouverture.
+- **Chip "Rappel dû"** sur la File d'action pour isoler uniquement ces cas.
+- Le texte "Rappel prévu le..." sur chaque carte passe en orange et devient
+  "Rappel dû le..." dès que la date est atteinte — visuellement impossible à
+  manquer en scannant la liste.
+
+Aucune migration nécessaire — utilise les champs déjà en place.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,

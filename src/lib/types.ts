@@ -113,5 +113,6 @@ export interface DossierStatus {
   pctPaye: number | null; // % du montant facturé déjà réglé
   desyncRisque: boolean; // écart important entre temps consommé et montant payé
   promesseRompue: boolean; // le client avait promis de payer avant une date passée, toujours rien reçu
+  rappelDu: boolean; // un rappel était prévu aujourd'hui ou avant, toujours pas traité
   joursSansAction: number | null; // jours depuis la dernière action humaine enregistrée
 }

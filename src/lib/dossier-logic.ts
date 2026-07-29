@@ -45,6 +45,7 @@ function noVisibiliteFields(joursSansAction: number | null = null) {
     pctPaye: null as number | null,
     desyncRisque: false,
     promesseRompue: false,
+    rappelDu: false,
     joursSansAction,
   };
 }
@@ -54,6 +55,13 @@ function promesseRompueDe(d: Dossier, now: Date, soldeDu: boolean): boolean {
   if (d.dernier_type_action !== "promesse_paiement") return false;
   if (!d.prochain_rappel) return false;
   return parseISO(d.prochain_rappel) < now;
+}
+
+/** Un rappel (tout type d'action confondu) était prévu aujourd'hui ou avant, et rien n'a été fait depuis. */
+function rappelDuDe(d: Dossier, now: Date): boolean {
+  if (!d.prochain_rappel) return false;
+  const rappel = parseISO(d.prochain_rappel);
+  return differenceInCalendarDays(now, rappel) >= 0;
 }
 
 export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatus {
@@ -163,6 +171,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       soldeDu &&
       pctTemps - pctPaye >= SEUIL_DESYNC_ECART_POINTS;
     const promesseRompue = !perteReelle && promesseRompueDe(d, now, soldeDu);
+    const rappelDu = rappelDuDe(d, now);
 
     // --- Perte : priorité la plus haute, mais on distingue totale vs récupérable ---
     if (perteReelle) {
@@ -178,6 +187,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
           pctPaye,
           desyncRisque: false,
           promesseRompue: false,
+          rappelDu,
           joursSansAction,
         };
       }
@@ -192,6 +202,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque: false,
         promesseRompue: false,
+        rappelDu,
         joursSansAction,
       };
     }
@@ -209,6 +220,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         promesseRompue: true,
+        rappelDu,
         joursSansAction,
       };
     }
@@ -226,6 +238,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         promesseRompue: false,
+        rappelDu,
         joursSansAction,
       };
     }
@@ -241,6 +254,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         promesseRompue: false,
+        rappelDu,
         joursSansAction,
       };
     }
@@ -256,6 +270,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         promesseRompue: false,
+        rappelDu,
         joursSansAction,
       };
     }
@@ -272,6 +287,29 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         promesseRompue: false,
+        rappelDu,
+        joursSansAction,
+      };
+    }
+
+    // --- Rappel dû : aucun autre signal plus grave, mais un suivi était prévu et rien n'a été fait ---
+    if (rappelDu) {
+      const joursRetard = differenceInCalendarDays(now, parseISO(d.prochain_rappel!));
+      return {
+        label: "Rappel dû",
+        sub:
+          joursRetard === 0
+            ? "Rappel prévu aujourd'hui"
+            : `Rappel en retard de ${joursRetard}j`,
+        color: "warning",
+        alert: true,
+        severity: 2,
+        columnKey: "paiement",
+        pctTemps,
+        pctPaye,
+        desyncRisque,
+        promesseRompue: false,
+        rappelDu,
         joursSansAction,
       };
     }
@@ -287,6 +325,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctPaye,
       desyncRisque,
       promesseRompue: false,
+      rappelDu,
       joursSansAction,
     };
   }

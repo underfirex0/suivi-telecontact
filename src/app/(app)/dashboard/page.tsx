@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PartyPopper, UserX, PhoneOff } from "lucide-react";
+import { PartyPopper, UserX, PhoneOff, CalendarClock } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
 import { useDossiers } from "@/components/providers/dossiers-provider";
@@ -61,6 +61,7 @@ export default function DashboardPage() {
 
   const nonAssignes = fileAction.filter((x) => !x.d.operateur_id);
   const promessesRompues = fileAction.filter((x) => x.a.promesseRompue);
+  const rappelsDus = fileAction.filter((x) => x.a.rappelDu);
 
   const kpis = [
     { label: "Dossiers actifs", value: active.length, cls: "" },
@@ -142,10 +143,18 @@ export default function DashboardPage() {
             )}
 
             {promessesRompues.length > 0 && (
-              <div className="mb-5 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger">
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger">
                 <PhoneOff size={15} />
                 {promessesRompues.length} client{promessesRompues.length > 1 ? "s" : ""} n&apos;
                 {promessesRompues.length > 1 ? "ont" : "a"} pas tenu leur promesse de paiement.
+              </div>
+            )}
+
+            {rappelsDus.length > 0 && (
+              <div className="mb-5 flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-tint px-4 py-3 text-[13px] font-semibold text-warn">
+                <CalendarClock size={15} />
+                {rappelsDus.length} rappel{rappelsDus.length > 1 ? "s" : ""} prévu{rappelsDus.length > 1 ? "s" : ""}{" "}
+                aujourd&apos;hui ou en retard.
               </div>
             )}
 
