@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { ActionLogDialog } from "@/components/action-log-dialog";
 import { AbandonDialog } from "@/components/abandon-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
-import { analyzeDossier, scoreFileAction } from "@/lib/dossier-logic";
+import { analyzeDossier, scoreFileAction, COURRIEL_CONFIG } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { formatMontant, formatDate, initials, cn } from "@/lib/utils";
 import { STATUS_HEX } from "@/lib/status-colors";
@@ -49,7 +49,8 @@ type StaleMode = "all" | "3" | "7" | "15" | "30";
 export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profiles: Profile[] }) {
   const router = useRouter();
   const now = useNow();
-  const { addAction, claimDossier, abandonDossier, currentProfile, fetchAllActions } = useDossiers();
+  const { addAction, claimDossier, abandonDossier, currentProfile, fetchAllActions, updateCourrielNiveau } =
+    useDossiers();
   const [actionDossier, setActionDossier] = useState<Dossier | null>(null);
   const [abandonDossierTarget, setAbandonDossierTarget] = useState<Dossier | null>(null);
   const [lastActionByDossier, setLastActionByDossier] = useState<Map<string, ActionEntry>>(new Map());
@@ -349,6 +350,11 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                           {d.ville}
                         </span>
                       )}
+                      {d.courriel_niveau && (
+                        <Badge color={COURRIEL_CONFIG[d.courriel_niveau].color}>
+                          {COURRIEL_CONFIG[d.courriel_niveau].label}
+                        </Badge>
+                      )}
                     </div>
 
                     <div className="text-[14px] font-semibold text-ink">{d.client_nom}</div>
@@ -414,6 +420,11 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                           <span className="font-semibold text-ink">
                             {TYPE_LABELS[lastAction.type] ?? lastAction.type}
                           </span>
+                          {lastAction.sous_statut && (
+                            <span className="ml-1 rounded-full bg-warn-tint px-1.5 py-0.5 text-[10px] font-bold text-warn">
+                              {lastAction.sous_statut}
+                            </span>
+                          )}
                           {lastAction.resultat && <span> — {lastAction.resultat}</span>}
                           <span className="text-ink-3">
                             {" "}
@@ -437,6 +448,25 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
                         N° {d.numero_facture}
                         {d.date_facture && ` · ${formatDate(d.date_facture)}`}
                       </div>
+                    )}
+                    {(!d.courriel_niveau || d.courriel_niveau < 3) && (
+                      <Select
+                        value="_placeholder"
+                        onValueChange={(v) => updateCourrielNiveau(d.id, Number(v) as 1 | 2 | 3)}
+                      >
+                        <SelectTrigger className="w-[150px] text-[11.5px]">
+                          <SelectValue placeholder={d.courriel_niveau ? "Escalader..." : "Envoyer courriel..."} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {([1, 2, 3] as const)
+                            .filter((n) => !d.courriel_niveau || n > d.courriel_niveau)
+                            .map((n) => (
+                              <SelectItem key={n} value={String(n)}>
+                                Envoyer {COURRIEL_CONFIG[n].label}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                     )}
                     <div className="mt-1 flex gap-1.5">
                       {!d.operateur_id && (
@@ -465,8 +495,8 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
         <ActionLogDialog
           open={!!actionDossier}
           onOpenChange={(open) => !open && setActionDossier(null)}
-          onConfirm={async (type, resultat, note, dateRappel) => {
-            await addAction(actionDossier.id, type, resultat, note, dateRappel);
+          onConfirm={async (type, resultat, note, dateRappel, sousStatut) => {
+            await addAction(actionDossier.id, type, resultat, note, dateRappel, sousStatut);
             await loadLastActions();
           }}
         />

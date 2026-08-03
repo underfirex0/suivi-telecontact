@@ -25,6 +25,8 @@ const TYPE_OPTIONS: { value: ActionType; label: string }[] = [
   { value: "autre", label: "Autre" },
 ];
 
+const APPEL_SOUS_STATUTS = ["Refuse de payer", "Changement date facture", "Ne répond plus"];
+
 export function ActionLogDialog({
   open,
   onOpenChange,
@@ -32,9 +34,16 @@ export function ActionLogDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (type: ActionType, resultat: string, note: string, dateRappel: string | null) => Promise<void>;
+  onConfirm: (
+    type: ActionType,
+    resultat: string,
+    note: string,
+    dateRappel: string | null,
+    sousStatut?: string | null
+  ) => Promise<void>;
 }) {
   const [type, setType] = useState<ActionType>("appel");
+  const [sousStatut, setSousStatut] = useState<string>("");
   const [resultat, setResultat] = useState("");
   const [note, setNote] = useState("");
   const [dateRappel, setDateRappel] = useState("");
@@ -42,6 +51,7 @@ export function ActionLogDialog({
 
   function reset() {
     setType("appel");
+    setSousStatut("");
     setResultat("");
     setNote("");
     setDateRappel("");
@@ -49,7 +59,7 @@ export function ActionLogDialog({
 
   async function handleConfirm() {
     setSaving(true);
-    await onConfirm(type, resultat.trim(), note.trim(), dateRappel || null);
+    await onConfirm(type, resultat.trim(), note.trim(), dateRappel || null, type === "appel" ? sousStatut || null : null);
     setSaving(false);
     reset();
     onOpenChange(false);
@@ -65,7 +75,13 @@ export function ActionLogDialog({
         <DialogBody>
           <div className="mb-4">
             <Label>Type d&apos;action</Label>
-            <Select value={type} onValueChange={(v) => setType(v as ActionType)}>
+            <Select
+              value={type}
+              onValueChange={(v) => {
+                setType(v as ActionType);
+                if (v !== "appel") setSousStatut("");
+              }}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -78,6 +94,25 @@ export function ActionLogDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {type === "appel" && (
+            <div className="mb-4">
+              <Label>Sous-statut de l&apos;appel (optionnel)</Label>
+              <Select value={sousStatut} onValueChange={setSousStatut}>
+                <SelectTrigger>
+                  <SelectValue placeholder="— Aucun —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {APPEL_SOUS_STATUTS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="mb-4">
             <Label htmlFor="a-resultat">Résultat</Label>
             <Input

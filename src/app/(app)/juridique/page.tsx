@@ -235,7 +235,10 @@ export default function JuridiquePage() {
                         {d.reference_tribunal && <span>Réf. tribunal : {d.reference_tribunal}</span>}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-3">
-                        {d.date_mise_en_demeure && <span>Mise en demeure : {formatDate(d.date_mise_en_demeure)}</span>}
+                        {d.date_mise_en_demeure && <span>MED Edicom : {formatDate(d.date_mise_en_demeure)}</span>}
+                        {d.date_mise_en_demeure_avocat && (
+                          <span>MED Avocat : {formatDate(d.date_mise_en_demeure_avocat)}</span>
+                        )}
                         {d.date_assignation && <span>Assignation : {formatDate(d.date_assignation)}</span>}
                         {d.date_jugement && <span>Jugement : {formatDate(d.date_jugement)}</span>}
                       </div>

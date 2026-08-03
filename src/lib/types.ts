@@ -1,7 +1,14 @@
 export type Etape = "qc" | "facturation" | "paiement" | "paye";
 export type QcSousStatut = "attente" | "a_corriger" | "ok";
 export type ActionType = "appel" | "email" | "visite" | "promesse_paiement" | "autre";
-export type JuridiqueEtape = "mise_en_demeure" | "assignation" | "jugement" | "execution" | "clos";
+export type JuridiqueEtape =
+  | "en_attente"
+  | "mise_en_demeure_edicom"
+  | "mise_en_demeure_avocat"
+  | "assignation"
+  | "jugement"
+  | "execution"
+  | "clos";
 
 export interface Profile {
   id: string;
@@ -31,6 +38,7 @@ export interface Dossier {
 
   numero_facture: string | null;
   ville: string | null;
+  courriel_niveau: 1 | 2 | 3 | null;
 
   abandonne_at: string | null;
   abandonne_par: string | null;
@@ -45,6 +53,7 @@ export interface Dossier {
   juridique_etape: JuridiqueEtape | null;
   juridique_etape_maj_at: string | null;
   date_mise_en_demeure: string | null;
+  date_mise_en_demeure_avocat: string | null;
   date_assignation: string | null;
   date_jugement: string | null;
   montant_jugement: number | null;
@@ -85,6 +94,7 @@ export interface ActionEntry {
   dossier_id: string;
   type: ActionType;
   resultat: string | null;
+  sous_statut: string | null;
   note: string | null;
   date_rappel: string | null;
   created_by: string | null;

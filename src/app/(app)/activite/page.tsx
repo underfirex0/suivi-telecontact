@@ -272,6 +272,11 @@ export default function ActivitePage() {
                               Promesse non tenue
                             </span>
                           )}
+                          {act.sous_statut && (
+                            <span className="rounded-full bg-warn-tint px-2 py-0.5 text-[10px] font-bold text-warn">
+                              {act.sous_statut}
+                            </span>
+                          )}
                         </div>
                         {act.resultat && <div className="mt-0.5 text-[12.5px] text-ink-2">{act.resultat}</div>}
                         {act.note && <div className="mt-0.5 text-[11.5px] text-ink-3">{act.note}</div>}

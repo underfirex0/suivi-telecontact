@@ -55,6 +55,7 @@ create table if not exists public.dossiers (
 
   numero_facture text,
   ville text,
+  courriel_niveau smallint check (courriel_niveau in (1, 2, 3)),
 
   abandonne_at timestamptz,
   abandonne_par uuid references public.profiles(id) on delete set null,
@@ -66,10 +67,14 @@ create table if not exists public.dossiers (
 
   juridique_actif boolean not null default false,
   juridique_notes text,
-  juridique_etape text default 'mise_en_demeure'
-    check (juridique_etape in ('mise_en_demeure', 'assignation', 'jugement', 'execution', 'clos')),
+  juridique_etape text default 'en_attente'
+    check (juridique_etape in (
+      'en_attente', 'mise_en_demeure_edicom', 'mise_en_demeure_avocat',
+      'assignation', 'jugement', 'execution', 'clos'
+    )),
   juridique_etape_maj_at timestamptz,
   date_mise_en_demeure date,
+  date_mise_en_demeure_avocat date,
   date_assignation date,
   date_jugement date,
   montant_jugement numeric(12,2),
@@ -226,6 +231,7 @@ create table if not exists public.actions (
   dossier_id uuid not null references public.dossiers(id) on delete cascade,
   type text not null check (type in ('appel', 'email', 'visite', 'promesse_paiement', 'autre')),
   resultat text,
+  sous_statut text,
   note text,
   date_rappel date,
   created_by uuid references public.profiles(id) on delete set null,

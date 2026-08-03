@@ -369,7 +369,9 @@ export const KANBAN_COLUMNS: {
 ];
 
 export const JURIDIQUE_ETAPES: { key: JuridiqueEtape; label: string; color: DossierStatus["color"] }[] = [
-  { key: "mise_en_demeure", label: "Mise en demeure envoyée", color: "warning" },
+  { key: "en_attente", label: "En attente", color: "neutral" },
+  { key: "mise_en_demeure_edicom", label: "Mise en demeure Edicom", color: "warning" },
+  { key: "mise_en_demeure_avocat", label: "Mise en demeure Avocat", color: "danger" },
   { key: "assignation", label: "Assignation déposée", color: "danger" },
   { key: "jugement", label: "Jugement obtenu", color: "juridique" },
   { key: "execution", label: "Exécution en cours", color: "juridique" },
@@ -377,5 +379,11 @@ export const JURIDIQUE_ETAPES: { key: JuridiqueEtape; label: string; color: Doss
 ];
 
 export function juridiqueEtapeLabel(etape: JuridiqueEtape | null): string {
-  return JURIDIQUE_ETAPES.find((e) => e.key === etape)?.label ?? "Mise en demeure envoyée";
+  return JURIDIQUE_ETAPES.find((e) => e.key === etape)?.label ?? "En attente";
 }
+
+export const COURRIEL_CONFIG: Record<1 | 2 | 3, { label: string; color: DossierStatus["color"] }> = {
+  1: { label: "Courriel 1", color: "neutral" },
+  2: { label: "Courriel 2", color: "warning" },
+  3: { label: "Courriel 3", color: "danger" },
+};

@@ -45,8 +45,10 @@ interface DossiersContextValue {
     type: ActionType,
     resultat: string,
     note: string,
-    dateRappel: string | null
+    dateRappel: string | null,
+    sousStatut?: string | null
   ) => Promise<void>;
+  updateCourrielNiveau: (id: string, niveau: 1 | 2 | 3) => Promise<void>;
   claimDossier: (id: string) => Promise<void>;
   abandonDossier: (id: string, raison: string) => Promise<void>;
   reactivateDossier: (id: string) => Promise<void>;
@@ -268,11 +270,11 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
         next
           ? {
               juridique_actif: true,
-              juridique_etape: "mise_en_demeure",
+              juridique_etape: "en_attente",
               juridique_etape_maj_at: new Date().toISOString(),
             }
           : { juridique_actif: false },
-        next ? "Suivi juridique activé manuellement — étape : Mise en demeure envoyée." : "Suivi juridique retiré."
+        next ? "Suivi juridique activé manuellement — étape : En attente." : "Suivi juridique retiré."
       );
     },
     [dossiers, updateDossier]
@@ -283,7 +285,8 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
       const label = JURIDIQUE_ETAPES.find((e) => e.key === etape)?.label ?? etape;
       const dateField: Partial<Dossier> = {};
       const stamp = dateEtape || todayISO();
-      if (etape === "mise_en_demeure") dateField.date_mise_en_demeure = stamp;
+      if (etape === "mise_en_demeure_edicom") dateField.date_mise_en_demeure = stamp;
+      if (etape === "mise_en_demeure_avocat") dateField.date_mise_en_demeure_avocat = stamp;
       if (etape === "assignation") dateField.date_assignation = stamp;
       if (etape === "jugement") dateField.date_jugement = stamp;
       await updateDossier(
@@ -421,7 +424,14 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addAction = useCallback(
-    async (dossierId: string, type: ActionType, resultat: string, note: string, dateRappel: string | null) => {
+    async (
+      dossierId: string,
+      type: ActionType,
+      resultat: string,
+      note: string,
+      dateRappel: string | null,
+      sousStatut?: string | null
+    ) => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -429,18 +439,26 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
         dossier_id: dossierId,
         type,
         resultat: resultat || null,
+        sous_statut: sousStatut || null,
         note: note || null,
         date_rappel: dateRappel,
         created_by: user?.id ?? null,
       });
       const label = ACTION_LABELS[type];
-      const texte = `Action enregistrée — ${label}${resultat ? " : " + resultat : ""}${
-        dateRappel ? ` (rappel prévu le ${dateRappel})` : ""
-      }`;
+      const texte = `Action enregistrée — ${label}${sousStatut ? " (" + sousStatut + ")" : ""}${
+        resultat ? " : " + resultat : ""
+      }${dateRappel ? ` (rappel prévu le ${dateRappel})` : ""}`;
       await addHistorique(dossierId, texte);
       await loadAll();
     },
     [supabase, addHistorique, loadAll]
+  );
+
+  const updateCourrielNiveau = useCallback(
+    async (id: string, niveau: 1 | 2 | 3) => {
+      await updateDossier(id, { courriel_niveau: niveau }, `Courriel niveau ${niveau} envoyé.`);
+    },
+    [updateDossier]
   );
 
   const claimDossier = useCallback(
@@ -512,6 +530,7 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     fetchActions,
     fetchAllActions,
     addAction,
+    updateCourrielNiveau,
     claimDossier,
     abandonDossier,
     reactivateDossier,

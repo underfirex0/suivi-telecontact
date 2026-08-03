@@ -447,9 +447,16 @@ export default function DossierDetailPage() {
                 {actions.map((act) => (
                   <div key={act.id} className="rounded-lg border border-border px-3 py-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[12.5px] font-semibold text-ink">
-                        {ACTION_TYPE_LABELS[act.type] ?? act.type}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[12.5px] font-semibold text-ink">
+                          {ACTION_TYPE_LABELS[act.type] ?? act.type}
+                        </span>
+                        {act.sous_statut && (
+                          <span className="rounded-full bg-warn-tint px-2 py-0.5 text-[10px] font-bold text-warn">
+                            {act.sous_statut}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[11px] text-ink-3">
                         {new Date(act.created_at).toLocaleString("fr-FR")}
                       </span>
@@ -524,10 +531,16 @@ export default function DossierDetailPage() {
                 />
               </div>
 
-              <div className="mb-3 grid grid-cols-3 gap-3 text-[11.5px] text-ink-2">
+              <div className="mb-3 grid grid-cols-4 gap-3 text-[11.5px] text-ink-2">
                 <div>
-                  <div className="text-ink-3">Mise en demeure</div>
+                  <div className="text-ink-3">MED Edicom</div>
                   <div className="font-mono font-semibold text-ink">{formatDate(dossier.date_mise_en_demeure)}</div>
+                </div>
+                <div>
+                  <div className="text-ink-3">MED Avocat</div>
+                  <div className="font-mono font-semibold text-ink">
+                    {formatDate(dossier.date_mise_en_demeure_avocat)}
+                  </div>
                 </div>
                 <div>
                   <div className="text-ink-3">Assignation</div>
@@ -695,7 +708,9 @@ export default function DossierDetailPage() {
       <ActionLogDialog
         open={actionOpen}
         onOpenChange={setActionOpen}
-        onConfirm={(type, resultat, note, dateRappel) => addAction(dossier.id, type, resultat, note, dateRappel)}
+        onConfirm={(type, resultat, note, dateRappel, sousStatut) =>
+          addAction(dossier.id, type, resultat, note, dateRappel, sousStatut)
+        }
       />
       <AbandonDialog
         open={abandonOpen}

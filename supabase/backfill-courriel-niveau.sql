@@ -1,0 +1,93 @@
+-- ============================================================
+-- BACKFILL — Niveau de courriel pour les dossiers historiques 2025/2026
+-- Rattache le niveau de courriel (1/2/3) déjà envoyé, retrouvé dans
+-- l'export Encaissement d'origine, aux dossiers déjà importés.
+-- Correspondance par numéro de facture (fiable, unique).
+-- À exécuter une seule fois, après la migration 007.
+-- ============================================================
+
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130886' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130849' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130505' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '131203' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130249' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131034' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131175' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130478' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131156' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130241' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130540' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130682' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130933' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130711' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130763' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130922' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130309' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131136' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131187' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130890' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130649' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '130932' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131127' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131195' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131170' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131231' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130258' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131150' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131149' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130898' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '130952' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130964' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '131009' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130990' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '131117' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '131118' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130648' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131101' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130589' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130554' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130483' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130883' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130943' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '131133' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130256' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130833' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130234' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '130946' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 3 where numero_facture = '130284' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131177' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131132' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131131' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130710' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130828' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130522' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131142' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 2 where numero_facture = '130891' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131246' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131387' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131250' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131345' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131275' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131276' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131277' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131348' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131391' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131397' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131406' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131242' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131409' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131428' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131458' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131459' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131463' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131464' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131479' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131489' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131488' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131492' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131524' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131516' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131520' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131538' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131298' and courriel_niveau is null;
+update public.dossiers set courriel_niveau = 1 where numero_facture = '131550' and courriel_niveau is null;
