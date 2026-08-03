@@ -101,6 +101,47 @@ export interface ActionEntry {
   created_at: string;
 }
 
+export interface ImportBatch {
+  id: string;
+  libelle: string;
+  fichiers: string[];
+  nb_nouveaux_dossiers: number;
+  nb_dossiers_soldes: number;
+  nb_dossiers_partiels: number;
+  montant_total_regle: number;
+  detail: {
+    nouveaux: {
+      source: "en_instance" | "reglement_seul";
+      client: string;
+      ville: string | null;
+      commercial: string | null;
+      numeroFacture: string;
+      montantFacture: number;
+      montantRecu: number;
+      dateCreation: string | null;
+      dateDebutVisibilite: string | null;
+      dateFinVisibilite: string | null;
+      courrielNiveau: 1 | 2 | 3 | null;
+      teleacteur: string | null;
+      paye: boolean;
+    }[];
+    paiementsExistants: {
+      dossierId: string;
+      client: string;
+      numeroFacture: string;
+      montantAjoute: number;
+      ancienRecu: number;
+      montantFacture: number | null;
+      nouveauTotal: number;
+      soldeApres: number;
+      devientPaye: boolean;
+      dateReglement: string | null;
+    }[];
+    anomalies: { ligne: string; raison: string }[];
+  };
+  created_by: string | null;
+  created_at: string;
+}
 export type StatusColor =
   | "neutral"
   | "warning"

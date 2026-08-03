@@ -308,6 +308,56 @@ ensuite).
 
 ---
 
+## Import — injecter les fichiers hebdomadaires directement, en toute sécurité
+
+Nouvelle page **Import** (menu de gauche). Plus besoin de m'envoyer les
+fichiers chaque semaine — glissez-les directement dans l'app.
+
+**Flux : Déposer → Prévisualiser → Confirmer → Visible pour toujours dans l'Historique**
+
+1. Déposez un ou plusieurs fichiers Excel (`.xls`/`.xlsx`) — le type est
+   détecté automatiquement (liste des règlements vs fichier "en instance"),
+   pas besoin de préciser.
+2. Le système compare avec ce qui existe déjà (par numéro de facture) et
+   affiche un aperçu complet **avant tout enregistrement** : nouveaux
+   dossiers, paiements sur dossiers existants, dossiers désormais soldés,
+   montant total, et toute ligne qui pose problème (anomalies).
+3. Vous vérifiez, vous ajustez le libellé si besoin, vous cliquez
+   **"Confirmer et injecter"** — c'est seulement à ce moment que la base est
+   modifiée.
+4. Chaque import devient une entrée permanente dans l'onglet **Historique**
+   — consultable à tout moment, avec le détail complet de ce qui a changé
+   ce jour-là.
+
+**Logique de rapprochement** (celle validée manuellement sur vos 3 premiers
+fichiers) :
+- Une facture déjà connue qui reçoit un règlement → paiement ajouté au
+  dossier existant (soldé automatiquement si le montant couvre le reste dû).
+- Une facture jamais vue, présente dans un fichier "en instance" → nouveau
+  dossier créé avec toutes ses infos (ville, commercial, dates de
+  visibilité, niveau de courriel).
+- Une facture jamais vue, visible uniquement dans la liste des règlements
+  (donc déjà soldée avant même d'apparaître ailleurs) → nouveau dossier créé
+  et marqué payé directement, avec le montant facturé estimé égal au
+  montant réglé (clairement indiqué comme une estimation).
+
+### Migration à exécuter
+
+`supabase/migration-010-imports-history.sql` — ajoute la table d'historique
+des imports.
+
+### Note de sécurité
+
+La lecture des fichiers Excel utilise la librairie `xlsx` (SheetJS). Sa
+version publiée sur le registre npm public a deux failles connues
+(pollution de prototype, ReDoS) sans correctif disponible sur ce registre —
+SheetJS ne distribue les versions corrigées que depuis leur propre serveur,
+inaccessible depuis cet environnement de build. Le risque réel reste faible
+ici : les fichiers traités sont ceux que votre équipe importe elle-même, pas
+des fichiers venant du public. À garder en tête si l'usage évolue.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,

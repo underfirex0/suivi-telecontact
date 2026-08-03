@@ -11,9 +11,10 @@ import {
 import { useRouter } from "next/navigation";
 import { format, addHours, addDays } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
-import type { Dossier, HistoriqueEntry, Profile, Paiement, ActionEntry, ActionType, JuridiqueEtape } from "@/lib/types";
+import type { Dossier, HistoriqueEntry, Profile, Paiement, ActionEntry, ActionType, JuridiqueEtape, ImportBatch } from "@/lib/types";
 import { todayISO } from "@/lib/utils";
 import { JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
+import type { ImportDiff } from "@/lib/import-diff";
 
 interface DossiersContextValue {
   dossiers: Dossier[];
@@ -49,6 +50,8 @@ interface DossiersContextValue {
     sousStatut?: string | null
   ) => Promise<void>;
   updateCourrielNiveau: (id: string, niveau: 1 | 2 | 3) => Promise<void>;
+  commitImport: (diff: ImportDiff, libelle: string, fichiers: string[]) => Promise<void>;
+  fetchImportBatches: () => Promise<ImportBatch[]>;
   claimDossier: (id: string) => Promise<void>;
   abandonDossier: (id: string, raison: string) => Promise<void>;
   reactivateDossier: (id: string) => Promise<void>;
@@ -461,6 +464,135 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [updateDossier]
   );
 
+  const commitImport = useCallback(
+    async (diff: ImportDiff, libelle: string, fichiers: string[]) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      // 1) Créer les nouveaux dossiers en bloc
+      const nouveauxPayload = diff.nouveaux.map((n) => {
+        const dateDebut = n.dateDebutVisibilite ?? n.dateCreation ?? todayISO();
+        const notesParts: string[] = [];
+        if (n.teleacteur) notesParts.push(`Téléacteur historique : ${n.teleacteur}`);
+        if (n.source === "reglement_seul") {
+          notesParts.push("Montant facturé estimé = montant réglé (déduit automatiquement, non confirmé par un fichier 'en instance').");
+        }
+        return {
+          client_nom: n.client,
+          ville: n.ville,
+          commercial: n.commercial,
+          numero_facture: n.numeroFacture,
+          date_bc: n.dateCreation ?? todayISO(),
+          date_debut_visibilite: dateDebut,
+          date_fin_visibilite: n.dateFinVisibilite,
+          montant_facture: n.montantFacture,
+          courriel_niveau: n.courrielNiveau,
+          etape: n.paye ? "paye" : "paiement",
+          qc_sous_statut: "ok",
+          date_qc: n.dateCreation ?? todayISO(),
+          date_facture: n.dateCreation ?? todayISO(),
+          date_paiement: n.paye ? todayISO() : null,
+          notes: notesParts.length ? notesParts.join(" — ") : null,
+          created_by: user?.id ?? null,
+        };
+      });
+
+      let insertedDossiers: { id: string; numero_facture: string | null }[] = [];
+      if (nouveauxPayload.length > 0) {
+        const { data, error } = await supabase.from("dossiers").insert(nouveauxPayload).select("id, numero_facture");
+        if (error) throw error;
+        insertedDossiers = data ?? [];
+      }
+      const newIdByFacture = new Map(insertedDossiers.map((d) => [d.numero_facture ?? "", d.id]));
+
+      // 2) Construire les paiements à insérer (nouveaux dossiers avec montant déjà reçu + paiements sur dossiers existants)
+      const paiementsPayload: {
+        dossier_id: string;
+        montant: number;
+        date_paiement: string;
+        note: string;
+        created_by: string | null;
+      }[] = [];
+
+      diff.nouveaux.forEach((n) => {
+        if (n.montantRecu <= 0) return;
+        const id = newIdByFacture.get(n.numeroFacture);
+        if (!id) return;
+        paiementsPayload.push({
+          dossier_id: id,
+          montant: n.montantRecu,
+          date_paiement: n.dateCreation ?? todayISO(),
+          note: `Import "${libelle}" — montant reçu à la création.`,
+          created_by: user?.id ?? null,
+        });
+      });
+
+      diff.paiementsExistants.forEach((p) => {
+        paiementsPayload.push({
+          dossier_id: p.dossierId,
+          montant: p.montantAjoute,
+          date_paiement: p.dateReglement ?? todayISO(),
+          note: `Import "${libelle}" — règlement reçu.`,
+          created_by: user?.id ?? null,
+        });
+      });
+
+      if (paiementsPayload.length > 0) {
+        const { error } = await supabase.from("paiements").insert(paiementsPayload);
+        if (error) throw error;
+      }
+
+      // 3) Historique (création + paiements) en un seul insert groupé
+      const historiquePayload: { dossier_id: string; auteur_id: string | null; texte: string }[] = [];
+      diff.nouveaux.forEach((n) => {
+        const id = newIdByFacture.get(n.numeroFacture);
+        if (!id) return;
+        historiquePayload.push({
+          dossier_id: id,
+          auteur_id: user?.id ?? null,
+          texte: `Dossier créé via import "${libelle}".`,
+        });
+      });
+      diff.paiementsExistants.forEach((p) => {
+        historiquePayload.push({
+          dossier_id: p.dossierId,
+          auteur_id: user?.id ?? null,
+          texte: `Import "${libelle}" — paiement de ${p.montantAjoute.toLocaleString("fr-FR")} MAD enregistré.`,
+        });
+      });
+      if (historiquePayload.length > 0) {
+        await supabase.from("historique").insert(historiquePayload);
+      }
+
+      // 4) Enregistrer le batch dans l'historique des imports (visibilité permanente)
+      const kpis = {
+        nb_nouveaux_dossiers: diff.nouveaux.length,
+        nb_dossiers_soldes:
+          diff.nouveaux.filter((n) => n.paye).length + diff.paiementsExistants.filter((p) => p.devientPaye).length,
+        nb_dossiers_partiels: diff.paiementsExistants.filter((p) => !p.devientPaye).length,
+        montant_total_regle:
+          diff.nouveaux.reduce((s, n) => s + n.montantRecu, 0) +
+          diff.paiementsExistants.reduce((s, p) => s + p.montantAjoute, 0),
+      };
+      await supabase.from("imports").insert({
+        libelle,
+        fichiers,
+        ...kpis,
+        detail: diff,
+        created_by: user?.id ?? null,
+      });
+
+      await loadAll();
+    },
+    [supabase, loadAll]
+  );
+
+  const fetchImportBatches = useCallback(async () => {
+    const { data } = await supabase.from("imports").select("*").order("created_at", { ascending: false });
+    return (data as ImportBatch[]) ?? [];
+  }, [supabase]);
+
   const claimDossier = useCallback(
     async (id: string) => {
       const {
@@ -531,6 +663,8 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     fetchAllActions,
     addAction,
     updateCourrielNiveau,
+    commitImport,
+    fetchImportBatches,
     claimDossier,
     abandonDossier,
     reactivateDossier,
