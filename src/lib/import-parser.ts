@@ -15,6 +15,7 @@ export interface EnInstanceRow {
   dateFinVisibilite: string | null;
   courrielNiveau: 1 | 2 | 3 | null;
   teleacteur: string | null;
+  observation: string | null;
 }
 
 export interface ReglementRow {
@@ -97,6 +98,7 @@ export async function parseExcelFile(file: File): Promise<ParsedFile> {
         dateFinVisibilite: excelDateToIso(r["Date fin ligne"]),
         courrielNiveau: courrielToNiveau(r["Couriel"]),
         teleacteur: toStr(r["Teleacteur"]) || null,
+        observation: toStr(r["Observation"]) || null,
       }))
       .filter((r) => r.numeroFacture);
     return { filename: file.name, kind: "en_instance", enInstanceRows, reglementRows: [] };

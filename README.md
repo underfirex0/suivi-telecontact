@@ -329,13 +329,21 @@ fichiers chaque semaine — glissez-les directement dans l'app.
    — consultable à tout moment, avec le détail complet de ce qui a changé
    ce jour-là.
 
-**Logique de rapprochement** (celle validée manuellement sur vos 3 premiers
-fichiers) :
-- Une facture déjà connue qui reçoit un règlement → paiement ajouté au
-  dossier existant (soldé automatiquement si le montant couvre le reste dû).
+**Ce que le rapprochement détecte maintenant** (pas seulement l'argent) :
+- Une facture déjà connue qui reçoit un règlement → paiement ajouté (soldé
+  automatiquement si le montant couvre le reste dû).
+- Une facture déjà connue qui réapparaît dans un futur fichier "en instance"
+  (cas toujours en cours) → **le niveau de courriel, la ville, le
+  commercial et toute nouvelle observation du téléacteur sont comparés
+  champ par champ** ; chaque changement est affiché avant validation
+  ("Niveau de courriel : Courriel 1 → Courriel 2") et appliqué au dossier,
+  avec une trace complète dans son historique.
+- Un écart de montant facturé (TTC) détecté sur un dossier existant n'est
+  **jamais modifié automatiquement** — signalé en anomalie pour vérification
+  manuelle.
 - Une facture jamais vue, présente dans un fichier "en instance" → nouveau
   dossier créé avec toutes ses infos (ville, commercial, dates de
-  visibilité, niveau de courriel).
+  visibilité, niveau de courriel, observation initiale).
 - Une facture jamais vue, visible uniquement dans la liste des règlements
   (donc déjà soldée avant même d'apparaître ailleurs) → nouveau dossier créé
   et marqué payé directement, avec le montant facturé estimé égal au
@@ -355,6 +363,29 @@ SheetJS ne distribue les versions corrigées que depuis leur propre serveur,
 inaccessible depuis cet environnement de build. Le risque réel reste faible
 ici : les fichiers traités sont ceux que votre équipe importe elle-même, pas
 des fichiers venant du public. À garder en tête si l'usage évolue.
+
+---
+
+## Analytique — la vue d'ensemble qui manquait
+
+Nouvelle page **Analytique** (menu de gauche), avec un vrai filtre de
+période (30j / 90j / 1 an / tout) :
+
+- **KPIs financiers** : facturé, encaissé, taux de recouvrement réel,
+  perdu définitivement, encore récupérable
+- **Graphique de tendance** : facturé vs encaissé, 6 derniers mois — répond
+  enfin à "est-ce qu'on s'améliore ou pas"
+- **Répartition du pipeline** (camembert) : où sont réellement les dossiers
+  en ce moment
+- **Performance par opérateur** : montant réellement récupéré sur la
+  période, pas juste un nombre de dossiers
+- **Suivi juridique** : répartition par étape en un coup d'œil
+- **Top villes / top commerciaux** par montant en jeu — un vrai signal de
+  gestion que l'ancien Excel ne donnait jamais
+- **Derniers imports** avec lien direct vers l'historique complet
+
+Aucune migration nécessaire — entièrement calculé à partir des données déjà
+en place.
 
 ---
 

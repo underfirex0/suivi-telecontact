@@ -37,6 +37,7 @@ interface DossiersContextValue {
   revertPaiement: (id: string) => Promise<void>;
   fetchHistorique: (dossierId: string) => Promise<HistoriqueEntry[]>;
   fetchPaiements: (dossierId: string) => Promise<Paiement[]>;
+  fetchAllPaiements: () => Promise<Paiement[]>;
   addPaiement: (dossierId: string, montant: number, datePaiement: string, note?: string) => Promise<void>;
   deletePaiement: (id: string, dossierId: string) => Promise<void>;
   fetchActions: (dossierId: string) => Promise<ActionEntry[]>;
@@ -367,6 +368,11 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [supabase]
   );
 
+  const fetchAllPaiements = useCallback(async () => {
+    const { data } = await supabase.from("paiements").select("*").order("date_paiement", { ascending: false }).limit(5000);
+    return (data as Paiement[]) ?? [];
+  }, [supabase]);
+
   const addPaiement = useCallback(
     async (dossierId: string, montant: number, datePaiement: string, note?: string) => {
       const {
@@ -474,6 +480,7 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
       const nouveauxPayload = diff.nouveaux.map((n) => {
         const dateDebut = n.dateDebutVisibilite ?? n.dateCreation ?? todayISO();
         const notesParts: string[] = [];
+        if (n.observation) notesParts.push(n.observation);
         if (n.teleacteur) notesParts.push(`Téléacteur historique : ${n.teleacteur}`);
         if (n.source === "reglement_seul") {
           notesParts.push("Montant facturé estimé = montant réglé (déduit automatiquement, non confirmé par un fichier 'en instance').");
@@ -533,7 +540,10 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
           dossier_id: p.dossierId,
           montant: p.montantAjoute,
           date_paiement: p.dateReglement ?? todayISO(),
-          note: `Import "${libelle}" — règlement reçu.`,
+          note:
+            p.source === "ecart_en_instance"
+              ? `Import "${libelle}" — paiement détecté via le fichier 'en instance' (aucune ligne de règlement correspondante ce jour-là).`
+              : `Import "${libelle}" — règlement reçu.`,
           created_by: user?.id ?? null,
         });
       });
@@ -543,7 +553,28 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error;
       }
 
-      // 3) Historique (création + paiements) en un seul insert groupé
+      // 3) Appliquer les mises à jour de champs (courriel, ville, commercial, observation)
+      //    sur les dossiers déjà connus — un update séparé par dossier, chaque champ modifié.
+      for (const maj of diff.misesAJour) {
+        const patch: Record<string, unknown> = {};
+        for (const c of maj.champs) {
+          if (c.champ === "Niveau de courriel") {
+            patch.courriel_niveau = c.nouveau === "Courriel 1" ? 1 : c.nouveau === "Courriel 2" ? 2 : 3;
+          }
+          if (c.champ === "Ville") patch.ville = c.nouveau;
+          if (c.champ === "Commercial") patch.commercial = c.nouveau;
+          if (c.champ === "Nouvelle observation") {
+            const current = dossiers.find((d) => d.id === maj.dossierId);
+            const existingNotes = current?.notes ?? "";
+            patch.notes = existingNotes ? `${existingNotes} — ${c.nouveau}` : c.nouveau;
+          }
+        }
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("dossiers").update(patch).eq("id", maj.dossierId);
+        }
+      }
+
+      // 4) Historique (création + paiements + mises à jour) en un seul insert groupé
       const historiquePayload: { dossier_id: string; auteur_id: string | null; texte: string }[] = [];
       diff.nouveaux.forEach((n) => {
         const id = newIdByFacture.get(n.numeroFacture);
@@ -561,11 +592,20 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
           texte: `Import "${libelle}" — paiement de ${p.montantAjoute.toLocaleString("fr-FR")} MAD enregistré.`,
         });
       });
+      diff.misesAJour.forEach((maj) => {
+        maj.champs.forEach((c) => {
+          historiquePayload.push({
+            dossier_id: maj.dossierId,
+            auteur_id: user?.id ?? null,
+            texte: `Import "${libelle}" — ${c.champ} : ${c.ancien} → ${c.nouveau}.`,
+          });
+        });
+      });
       if (historiquePayload.length > 0) {
         await supabase.from("historique").insert(historiquePayload);
       }
 
-      // 4) Enregistrer le batch dans l'historique des imports (visibilité permanente)
+      // 5) Enregistrer le batch dans l'historique des imports (visibilité permanente)
       const kpis = {
         nb_nouveaux_dossiers: diff.nouveaux.length,
         nb_dossiers_soldes:
@@ -657,6 +697,7 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     revertPaiement,
     fetchHistorique,
     fetchPaiements,
+    fetchAllPaiements,
     addPaiement,
     deletePaiement,
     fetchActions,

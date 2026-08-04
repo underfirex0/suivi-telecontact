@@ -123,6 +123,7 @@ export interface ImportBatch {
       dateFinVisibilite: string | null;
       courrielNiveau: 1 | 2 | 3 | null;
       teleacteur: string | null;
+      observation: string | null;
       paye: boolean;
     }[];
     paiementsExistants: {
@@ -136,6 +137,13 @@ export interface ImportBatch {
       soldeApres: number;
       devientPaye: boolean;
       dateReglement: string | null;
+      source: "reglement" | "ecart_en_instance";
+    }[];
+    misesAJour: {
+      dossierId: string;
+      client: string;
+      numeroFacture: string;
+      champs: { champ: string; ancien: string; nouveau: string }[];
     }[];
     anomalies: { ligne: string; raison: string }[];
   };
