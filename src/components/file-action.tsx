@@ -28,7 +28,9 @@ type Chip =
   | "perte_totale"
   | "perte_partielle"
   | "promesse_rompue"
-  | "desync"
+  | "niveau1"
+  | "niveau2"
+  | "niveau3"
   | "juridique"
   | "non_affecte"
   | "rappel_du";
@@ -37,7 +39,9 @@ const CHIP_LABELS: Record<Chip, string> = {
   perte_totale: "Perte totale",
   perte_partielle: "Perte récupérable",
   promesse_rompue: "Promesse non tenue",
-  desync: "Désynchronisation",
+  niveau1: "Niveau 1",
+  niveau2: "Niveau 2",
+  niveau3: "Niveau 3",
   juridique: "Suivi juridique",
   non_affecte: "Non affecté",
   rappel_du: "Rappel dû",
@@ -110,14 +114,16 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
   function matchesChip(
     columnKey: ColumnKey,
     promesseRompue: boolean,
-    desyncRisque: boolean,
+    niveau: 0 | 1 | 2 | 3,
     rappelDu: boolean
   ): boolean {
     const statusChips = new Set([
       "perte_totale",
       "perte_partielle",
       "promesse_rompue",
-      "desync",
+      "niveau1",
+      "niveau2",
+      "niveau3",
       "juridique",
       "rappel_du",
     ]);
@@ -126,7 +132,9 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
     if (activeChips.has("perte_totale") && columnKey === "perte_totale") return true;
     if (activeChips.has("perte_partielle") && columnKey === "perte_partielle") return true;
     if (activeChips.has("promesse_rompue") && promesseRompue) return true;
-    if (activeChips.has("desync") && desyncRisque) return true;
+    if (activeChips.has("niveau1") && niveau === 1) return true;
+    if (activeChips.has("niveau2") && niveau === 2) return true;
+    if (activeChips.has("niveau3") && niveau === 3) return true;
     if (activeChips.has("juridique") && columnKey === "juridique") return true;
     if (activeChips.has("rappel_du") && rappelDu) return true;
     return false;
@@ -135,7 +143,7 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
   const items = useMemo(() => {
     let list = allItems.filter(({ d, a }) => {
       if (activeChips.has("non_affecte") && d.operateur_id) return false;
-      if (!matchesChip(a.columnKey, a.promesseRompue, a.desyncRisque, a.rappelDu)) return false;
+      if (!matchesChip(a.columnKey, a.promesseRompue, a.niveau, a.rappelDu)) return false;
       if (operateurFilter === "moi" && d.operateur_id !== currentProfile?.id) return false;
       if (operateurFilter !== "all" && operateurFilter !== "moi" && d.operateur_id !== operateurFilter) return false;
       if (villeFilter !== "all" && d.ville !== villeFilter) return false;

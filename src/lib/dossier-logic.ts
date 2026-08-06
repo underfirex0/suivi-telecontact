@@ -5,13 +5,14 @@ import type { Dossier, DossierStatus, JuridiqueEtape } from "./types";
  * Seuils métier :
  * - Référencement : effectif 24h EXACTES après la création du dossier
  * - QC en retard : 2 jours après le référencement sans QC faite
- * - Relance niveau 1 : 15 jours après facturation sans paiement
- * - Relance niveau 2 : 25 jours après facturation sans paiement
  * - Suivi juridique : DÉCISION HUMAINE UNIQUEMENT — plus d'escalade automatique
  *   par nombre de jours. Une seule personne doit décider de l'activer.
- * - Risque de désynchronisation : le % de visibilité consommée dépasse le %
- *   payé de 25 points ou plus, avant expiration totale (seuil par défaut,
- *   ajustable — voir SEUIL_DESYNC_ECART_POINTS).
+ * - Niveaux de risque (remplace l'ancien système par jours) : basés uniquement
+ *   sur l'écart entre le % de visibilité déjà consommée et le % déjà payé.
+ *   Exemple : 0% payé → Niveau 1 dès 20% de temps consommé. 30% payé →
+ *   Niveau 1 seulement à partir de 50% de temps consommé (écart de 20 points
+ *   dans les deux cas). Niveau 2 = écart ≥ 35 points. Niveau 3 = écart ≥ 50
+ *   points (signal fort — proche du seuil de perte réelle à 100%).
  * - Perte totale vs récupérable : si moins de 10% du montant facturé a été
  *   réglé au moment où la visibilité expire, on considère que le dossier
  *   n'a jamais vraiment généré de paiement ("perte totale" — probablement
@@ -19,9 +20,9 @@ import type { Dossier, DossierStatus, JuridiqueEtape } from "./types";
  *   ("perte partielle récupérable" — encore à réclamer).
  */
 export const SEUIL_QC_RETARD_JOURS = 2;
-export const SEUIL_RELANCE_1_JOURS = 15;
-export const SEUIL_RELANCE_2_JOURS = 25;
-export const SEUIL_DESYNC_ECART_POINTS = 25;
+export const SEUIL_NIVEAU_1_ECART_POINTS = 20;
+export const SEUIL_NIVEAU_2_ECART_POINTS = 35;
+export const SEUIL_NIVEAU_3_ECART_POINTS = 50;
 export const SEUIL_PERTE_TOTALE_PCT_PAYE = 10;
 
 /** Référencement = 24h exactes après la création du dossier (created_at). */
@@ -44,6 +45,7 @@ function noVisibiliteFields(joursSansAction: number | null = null) {
     pctTemps: null as number | null,
     pctPaye: null as number | null,
     desyncRisque: false,
+    niveau: 0 as 0 | 1 | 2 | 3,
     promesseRompue: false,
     rappelDu: false,
     joursSansAction,
@@ -62,6 +64,15 @@ function rappelDuDe(d: Dossier, now: Date): boolean {
   if (!d.prochain_rappel) return false;
   const rappel = parseISO(d.prochain_rappel);
   return differenceInCalendarDays(now, rappel) >= 0;
+}
+
+/** Niveau 0-3 basé sur l'écart entre % temps consommé et % payé. */
+function niveauDe(gap: number | null): 0 | 1 | 2 | 3 {
+  if (gap == null) return 0;
+  if (gap >= SEUIL_NIVEAU_3_ECART_POINTS) return 3;
+  if (gap >= SEUIL_NIVEAU_2_ECART_POINTS) return 2;
+  if (gap >= SEUIL_NIVEAU_1_ECART_POINTS) return 1;
+  return 0;
 }
 
 export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatus {
@@ -161,15 +172,12 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctPaye = Math.max(0, (d.montant_recu / d.montant_facture) * 100);
     }
 
+    const gap = pctTemps !== null && pctPaye !== null ? pctTemps - pctPaye : null;
     const soldeDu = d.montant_facture != null && d.montant_recu < d.montant_facture;
     const perteReelle = pctTemps !== null && pctTemps >= 100 && soldeDu;
     const perteTotale = perteReelle && (pctPaye ?? 0) < SEUIL_PERTE_TOTALE_PCT_PAYE;
-    const desyncRisque =
-      !perteReelle &&
-      pctTemps !== null &&
-      pctPaye !== null &&
-      soldeDu &&
-      pctTemps - pctPaye >= SEUIL_DESYNC_ECART_POINTS;
+    const niveau = !perteReelle && soldeDu ? niveauDe(gap) : 0;
+    const desyncRisque = niveau >= 1;
     const promesseRompue = !perteReelle && promesseRompueDe(d, now, soldeDu);
     const rappelDu = rappelDuDe(d, now);
 
@@ -181,11 +189,12 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
           sub: `Visibilité expirée (${Math.round(pctTemps!)}%) · ${Math.round(pctPaye ?? 0)}% payé — probablement irrécupérable`,
           color: "perte",
           alert: true,
-          severity: 6,
+          severity: 7,
           columnKey: "perte_totale",
           pctTemps,
           pctPaye,
           desyncRisque: false,
+          niveau: 0,
           promesseRompue: false,
           rappelDu,
           joursSansAction,
@@ -196,30 +205,13 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         sub: `Visibilité expirée (${Math.round(pctTemps!)}%) · ${Math.round(pctPaye ?? 0)}% payé — solde encore réclamable`,
         color: "danger",
         alert: true,
-        severity: 5,
+        severity: 6,
         columnKey: "perte_partielle",
         pctTemps,
         pctPaye,
         desyncRisque: false,
+        niveau: 0,
         promesseRompue: false,
-        rappelDu,
-        joursSansAction,
-      };
-    }
-
-    // --- Promesse de paiement non tenue : signal fort, prioritaire sur les relances génériques ---
-    if (promesseRompue) {
-      return {
-        label: "Promesse non tenue",
-        sub: `Devait payer le ${d.prochain_rappel} · rien reçu depuis`,
-        color: "danger",
-        alert: true,
-        severity: 4,
-        columnKey: "paiement",
-        pctTemps,
-        pctPaye,
-        desyncRisque,
-        promesseRompue: true,
         rappelDu,
         joursSansAction,
       };
@@ -232,20 +224,59 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         sub: `Impayé depuis ${daysSinceFacture}j · décision manuelle`,
         color: "juridique",
         alert: true,
-        severity: 4,
+        severity: 5,
         columnKey: "juridique",
         pctTemps,
         pctPaye,
         desyncRisque,
+        niveau,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
       };
     }
-    if (daysSinceFacture >= SEUIL_RELANCE_2_JOURS) {
+
+    // --- Promesse de paiement non tenue : signal fort, prioritaire sur les niveaux génériques ---
+    if (promesseRompue) {
       return {
-        label: "Relance niveau 2",
-        sub: `Impayé depuis ${daysSinceFacture}j`,
+        label: "Promesse non tenue",
+        sub: `Devait payer le ${d.prochain_rappel} · rien reçu depuis`,
+        color: "danger",
+        alert: true,
+        severity: 4,
+        columnKey: "paiement",
+        pctTemps,
+        pctPaye,
+        desyncRisque,
+        niveau,
+        promesseRompue: true,
+        rappelDu,
+        joursSansAction,
+      };
+    }
+
+    // --- Niveaux 1/2/3 : écart croissant entre temps consommé et montant payé ---
+    if (niveau === 3) {
+      return {
+        label: "Niveau 3",
+        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé — écart de ${Math.round(gap!)}pts`,
+        color: "perte",
+        alert: true,
+        severity: 3.5,
+        columnKey: "paiement",
+        pctTemps,
+        pctPaye,
+        desyncRisque,
+        niveau,
+        promesseRompue: false,
+        rappelDu,
+        joursSansAction,
+      };
+    }
+    if (niveau === 2) {
+      return {
+        label: "Niveau 2",
+        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé — écart de ${Math.round(gap!)}pts`,
         color: "danger",
         alert: true,
         severity: 3,
@@ -253,15 +284,16 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
+        niveau,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
       };
     }
-    if (daysSinceFacture >= SEUIL_RELANCE_1_JOURS) {
+    if (niveau === 1) {
       return {
-        label: "Relance niveau 1",
-        sub: `Impayé depuis ${daysSinceFacture}j`,
+        label: "Niveau 1",
+        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé — écart de ${Math.round(gap!)}pts`,
         color: "warning",
         alert: true,
         severity: 2,
@@ -269,23 +301,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctTemps,
         pctPaye,
         desyncRisque,
-        promesseRompue: false,
-        rappelDu,
-        joursSansAction,
-      };
-    }
-
-    if (desyncRisque) {
-      return {
-        label: "Risque de désynchronisation",
-        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé seulement`,
-        color: "warning",
-        alert: true,
-        severity: 3,
-        columnKey: "paiement",
-        pctTemps,
-        pctPaye,
-        desyncRisque,
+        niveau,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -303,11 +319,12 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
             : `Rappel en retard de ${joursRetard}j`,
         color: "warning",
         alert: true,
-        severity: 2,
+        severity: 1,
         columnKey: "paiement",
         pctTemps,
         pctPaye,
         desyncRisque,
+        niveau,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -324,6 +341,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctTemps,
       pctPaye,
       desyncRisque,
+      niveau,
       promesseRompue: false,
       rappelDu,
       joursSansAction,

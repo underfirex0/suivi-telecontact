@@ -179,7 +179,8 @@ export interface DossierStatus {
   // Indicateurs de visibilité (uniquement calculés si les dates de visibilité existent)
   pctTemps: number | null; // % du temps de visibilité déjà consommé
   pctPaye: number | null; // % du montant facturé déjà réglé
-  desyncRisque: boolean; // écart important entre temps consommé et montant payé
+  desyncRisque: boolean; // niveau >= 1 (conservé pour compatibilité d'affichage)
+  niveau: 0 | 1 | 2 | 3; // niveau d'écart entre temps consommé et montant payé
   promesseRompue: boolean; // le client avait promis de payer avant une date passée, toujours rien reçu
   rappelDu: boolean; // un rappel était prévu aujourd'hui ou avant, toujours pas traité
   joursSansAction: number | null; // jours depuis la dernière action humaine enregistrée

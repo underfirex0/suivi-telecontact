@@ -389,6 +389,38 @@ en place.
 
 ---
 
+## Nouveau système de Niveau (remplace les relances par jours)
+
+Les anciennes "Relance niveau 1/2" basées sur le nombre de jours depuis la
+facture sont retirées. À la place, **tout repose sur l'écart entre le % de
+visibilité déjà consommée et le % déjà payé** :
+
+- **Niveau 1** : écart ≥ 20 points (ex : 0% payé + 20% du temps consommé,
+  ou 30% payé + 50% du temps consommé — toujours un écart de 20)
+- **Niveau 2** : écart ≥ 35 points
+- **Niveau 3** : écart ≥ 50 points — couleur distincte (brun, comme la
+  perte réelle) car c'est le signal juste avant qu'un dossier ne devienne
+  une perte totale
+
+Ces niveaux sont désormais filtrables individuellement dans la File
+d'action (chips "Niveau 1", "Niveau 2", "Niveau 3"), comptés sur le
+tableau de bord, et exportables en CSV.
+
+Seuils centralisés dans `src/lib/dossier-logic.ts`
+(`SEUIL_NIVEAU_1_ECART_POINTS`, `_2_`, `_3_`) — ajustables en un seul
+endroit si l'expérience terrain montre qu'ils doivent bouger.
+
+## Suivi juridique — cartes enrichies
+
+Les dossiers sur la page Suivi juridique affichent maintenant les mêmes
+informations que la File d'action : offre/commercial, badge "Non affecté"
+avec bouton "Me l'affecter", tag de niveau de courriel, barres de
+progression temps/payé, dernière action enregistrée, numéro de facture, et
+un filtre par opérateur (dont "Mes dossiers"). Plus besoin d'ouvrir chaque
+dossier pour avoir le contexte.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,

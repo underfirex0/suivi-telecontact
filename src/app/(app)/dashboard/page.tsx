@@ -62,6 +62,9 @@ export default function DashboardPage() {
   const nonAssignes = fileAction.filter((x) => !x.d.operateur_id);
   const promessesRompues = fileAction.filter((x) => x.a.promesseRompue);
   const rappelsDus = fileAction.filter((x) => x.a.rappelDu);
+  const niveau1 = enPaiement.filter((x) => x.a.niveau === 1).length;
+  const niveau2 = enPaiement.filter((x) => x.a.niveau === 2).length;
+  const niveau3 = enPaiement.filter((x) => x.a.niveau === 3).length;
 
   const kpis = [
     { label: "Dossiers actifs", value: active.length, cls: "" },
@@ -133,6 +136,37 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+
+            {(niveau1 > 0 || niveau2 > 0 || niveau3 > 0) && (
+              <div className="mb-5 grid grid-cols-3 gap-3">
+                <button
+                  onClick={() => router.push("/dossiers")}
+                  className="flex items-center justify-between rounded-xl border border-warn/30 bg-warn-tint px-4 py-2.5 text-left"
+                >
+                  <span className="text-[12.5px] font-semibold text-warn">Niveau 1</span>
+                  <span className="font-display text-[18px] font-bold text-warn">{niveau1}</span>
+                </button>
+                <button
+                  onClick={() => router.push("/dossiers")}
+                  className="flex items-center justify-between rounded-xl border border-danger/30 bg-danger-tint px-4 py-2.5 text-left"
+                >
+                  <span className="text-[12.5px] font-semibold text-danger">Niveau 2</span>
+                  <span className="font-display text-[18px] font-bold text-danger">{niveau2}</span>
+                </button>
+                <button
+                  onClick={() => router.push("/dossiers")}
+                  className="flex items-center justify-between rounded-xl border px-4 py-2.5 text-left"
+                  style={{ borderColor: "#7A2E1F4D", backgroundColor: "#7A2E1F14" }}
+                >
+                  <span className="text-[12.5px] font-semibold" style={{ color: "#7A2E1F" }}>
+                    Niveau 3
+                  </span>
+                  <span className="font-display text-[18px] font-bold" style={{ color: "#7A2E1F" }}>
+                    {niveau3}
+                  </span>
+                </button>
+              </div>
+            )}
 
             {nonAssignes.length > 0 && (
               <div className="mb-3 flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-tint px-4 py-3 text-[13px] font-semibold text-warn">

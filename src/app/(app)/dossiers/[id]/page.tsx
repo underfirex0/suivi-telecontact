@@ -333,9 +333,9 @@ export default function DossierDetailPage() {
             <div className="mb-5 rounded-xl border border-border p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="font-display text-[13.5px] font-semibold text-ink">Visibilité &amp; règlement</div>
-                {a.desyncRisque && (
-                  <Badge color="warning">
-                    <AlertTriangle size={11} /> Risque de désynchronisation
+                {a.niveau > 0 && (
+                  <Badge color={a.niveau === 3 ? "perte" : a.niveau === 2 ? "danger" : "warning"}>
+                    <AlertTriangle size={11} /> Niveau {a.niveau}
                   </Badge>
                 )}
               </div>
