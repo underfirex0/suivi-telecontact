@@ -50,7 +50,15 @@ const CHIP_LABELS: Record<Chip, string> = {
 type SortMode = "priorite" | "montant" | "jours" | "client";
 type StaleMode = "all" | "3" | "7" | "15" | "30";
 
-export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profiles: Profile[] }) {
+export function FileAction({
+  dossiers,
+  profiles,
+  onlyAlerts = false,
+}: {
+  dossiers: Dossier[];
+  profiles: Profile[];
+  onlyAlerts?: boolean;
+}) {
   const router = useRouter();
   const now = useNow();
   const { addAction, claimDossier, abandonDossier, currentProfile, fetchAllActions, updateCourrielNiveau } =
@@ -96,11 +104,12 @@ export function FileAction({ dossiers, profiles }: { dossiers: Dossier[]; profil
   }, [dossiers]);
 
   const allItems = useMemo(() => {
-    return dossiers
+    let list = dossiers
       .filter((d) => d.etape === "paiement")
-      .map((d) => ({ d, a: analyzeDossier(d, now) }))
-      .filter((x) => x.a.alert);
-  }, [dossiers, now]);
+      .map((d) => ({ d, a: analyzeDossier(d, now) }));
+    if (onlyAlerts) list = list.filter((x) => x.a.alert);
+    return list;
+  }, [dossiers, now, onlyAlerts]);
 
   function toggleChip(chip: Chip) {
     setActiveChips((prev) => {

@@ -91,7 +91,7 @@ export default function DossiersPage() {
             </div>
 
             <TabsContent value="file-action">
-              <FileAction dossiers={filtered} profiles={profiles} />
+              <FileAction dossiers={filtered} profiles={profiles} onlyAlerts={onlyAlerts} />
             </TabsContent>
 
             <TabsContent value="kanban">
