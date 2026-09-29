@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { KanbanBoard } from "@/components/kanban-board";
 import { DossierTable } from "@/components/dossier-table";
 import { FileAction } from "@/components/file-action";
+import { PayesView } from "@/components/payes-view";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { useScope } from "@/components/providers/scope-provider";
 import { analyzeDossier } from "@/lib/dossier-logic";
@@ -32,6 +33,7 @@ export default function DossiersPage() {
   );
   const archived = useMemo(() => allDossiers.filter((d) => d.archived_at), [allDossiers]);
   const abandonnes = useMemo(() => allDossiers.filter((d) => d.abandonne_at && !d.archived_at), [allDossiers]);
+  const payesCount = useMemo(() => active.filter((d) => d.etape === "paye").length, [active]);
 
   const filtered = useMemo(() => {
     if (!search) return active;
@@ -72,6 +74,7 @@ export default function DossiersPage() {
                 <TabsTrigger value="file-action">File d&apos;action</TabsTrigger>
                 <TabsTrigger value="kanban">Kanban</TabsTrigger>
                 <TabsTrigger value="table">Liste</TabsTrigger>
+                <TabsTrigger value="payes">Payés{payesCount > 0 ? ` (${payesCount})` : ""}</TabsTrigger>
                 <TabsTrigger value="abandonnes">
                   Abandonnés{abandonnes.length > 0 ? ` (${abandonnes.length})` : ""}
                 </TabsTrigger>
@@ -101,10 +104,18 @@ export default function DossiersPage() {
             </TabsContent>
 
             <TabsContent value="kanban">
-              <KanbanBoard dossiers={filtered.filter((d) => d.etape !== "paiement")} profiles={profiles} onlyAlerts={onlyAlerts} />
+              <KanbanBoard
+                dossiers={filtered.filter((d) => d.etape !== "paiement" && d.etape !== "paye")}
+                profiles={profiles}
+                onlyAlerts={onlyAlerts}
+              />
             </TabsContent>
             <TabsContent value="table">
               <DossierTable dossiers={tableDossiers} profiles={profiles} />
+            </TabsContent>
+
+            <TabsContent value="payes">
+              <PayesView dossiers={active} profiles={profiles} />
             </TabsContent>
 
             <TabsContent value="abandonnes">

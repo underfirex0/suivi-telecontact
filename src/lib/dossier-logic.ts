@@ -488,7 +488,6 @@ export const KANBAN_COLUMNS: {
   { key: "qc", title: "Contrôle qualité", dot: "neutral" },
   { key: "a_corriger", title: "À corriger", dot: "warning" },
   { key: "facturation", title: "Validé — à facturer", dot: "success" },
-  { key: "paye", title: "Payé", dot: "success" },
 ];
 
 export const JURIDIQUE_ETAPES: { key: JuridiqueEtape; label: string; color: DossierStatus["color"] }[] = [
