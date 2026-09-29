@@ -10,16 +10,21 @@ import { KanbanBoard } from "@/components/kanban-board";
 import { DossierTable } from "@/components/dossier-table";
 import { FileAction } from "@/components/file-action";
 import { useDossiers } from "@/components/providers/dossiers-provider";
+import { useScope } from "@/components/providers/scope-provider";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { cn, formatDate, formatMontant } from "@/lib/utils";
 
 export default function DossiersPage() {
-  const { dossiers: allDossiers, profiles, loading, restoreDossier, reactivateDossier } = useDossiers();
+  const { dossiers: everyDossier, profiles, loading, restoreDossier, reactivateDossier, analyzeCtx } = useDossiers();
+  const { apply } = useScope();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const now = useNow();
+
+  // Tout ce que montre cette page respecte la sélection Société → Édition → Support
+  const allDossiers = useMemo(() => apply(everyDossier), [apply, everyDossier]);
 
   const active = useMemo(
     () => allDossiers.filter((d) => !d.archived_at && !d.abandonne_at),
@@ -37,11 +42,11 @@ export default function DossiersPage() {
   }, [active, search]);
 
   const alertCount = useMemo(
-    () => filtered.filter((d) => analyzeDossier(d, now).alert).length,
-    [filtered, now]
+    () => filtered.filter((d) => analyzeDossier(d, now, analyzeCtx).alert).length,
+    [filtered, now, analyzeCtx]
   );
 
-  const tableDossiers = onlyAlerts ? filtered.filter((d) => analyzeDossier(d, now).alert) : filtered;
+  const tableDossiers = onlyAlerts ? filtered.filter((d) => analyzeDossier(d, now, analyzeCtx).alert) : filtered;
 
   const profileMap = useMemo(() => {
     const m = new Map(profiles.map((p) => [p.id, p.full_name]));
@@ -55,6 +60,7 @@ export default function DossiersPage() {
         description="Pipeline de référencement et file d'action de recouvrement"
         search={search}
         onSearchChange={setSearch}
+        scoped
       />
       <div className="px-8 py-6">
         {loading ? (

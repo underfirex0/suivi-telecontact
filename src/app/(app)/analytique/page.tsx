@@ -16,9 +16,11 @@ import {
 } from "recharts";
 import { Topbar } from "@/components/topbar";
 import { useDossiers } from "@/components/providers/dossiers-provider";
+import { useScope } from "@/components/providers/scope-provider";
 import { analyzeDossier, JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { formatMontant, initials } from "@/lib/utils";
+import { SOCIETE_SHORT, SOCIETE_COLORS, editionTab } from "@/lib/tags";
 import { STATUS_HEX } from "@/lib/status-colors";
 import { parseISO, subDays, format as fmtDate, startOfMonth, subMonths } from "date-fns";
 import type { Paiement, ActionEntry, ImportBatch } from "@/lib/types";
@@ -38,13 +40,23 @@ const PIPELINE_BUCKETS: { key: string; label: string; color: string }[] = [
 ];
 
 export default function AnalytiquePage() {
-  const { dossiers: allDossiers, profiles, fetchAllPaiements, fetchAllActions, fetchImportBatches } = useDossiers();
+  const {
+    dossiers: everyDossier,
+    profiles,
+    fetchAllPaiements,
+    fetchAllActions,
+    fetchImportBatches,
+    analyzeCtx,
+  } = useDossiers();
+  const { apply, scope } = useScope();
+  // Sélection Société → Édition → Support : tout ce qui suit (dossiers, paiements, actions) est restreint à celle-ci
+  const allDossiers = useMemo(() => apply(everyDossier), [apply, everyDossier]);
   const router = useRouter();
   const now = useNow();
 
   const [periode, setPeriode] = useState<Periode>("90");
-  const [paiements, setPaiements] = useState<Paiement[]>([]);
-  const [actions, setActions] = useState<ActionEntry[]>([]);
+  const [paiementsAll, setPaiements] = useState<Paiement[]>([]);
+  const [actionsAll, setActions] = useState<ActionEntry[]>([]);
   const [imports, setImports] = useState<ImportBatch[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -57,6 +69,14 @@ export default function AnalytiquePage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Seuls les paiements / actions des dossiers de la sélection comptent (sinon "encaissé" mélangerait les sociétés)
+  const idsSelection = useMemo(() => new Set(allDossiers.map((d) => d.id)), [allDossiers]);
+  const paiements = useMemo(
+    () => paiementsAll.filter((p) => idsSelection.has(p.dossier_id)),
+    [paiementsAll, idsSelection]
+  );
+  const actions = useMemo(() => actionsAll.filter((a) => idsSelection.has(a.dossier_id)), [actionsAll, idsSelection]);
 
   const dossiers = useMemo(() => allDossiers.filter((d) => !d.archived_at), [allDossiers]);
   const actifs = useMemo(() => dossiers.filter((d) => !d.abandonne_at), [dossiers]);
@@ -86,16 +106,16 @@ export default function AnalytiquePage() {
   const montantPerduTotal = useMemo(
     () =>
       actifs
-        .filter((d) => d.etape === "paiement" && analyzeDossier(d, now).columnKey === "perte_totale")
+        .filter((d) => d.etape === "paiement" && analyzeDossier(d, now, analyzeCtx).columnKey === "perte_totale")
         .reduce((s, d) => s + Math.max(0, (d.montant_facture ?? 0) - d.montant_recu), 0),
-    [actifs, now]
+    [actifs, now, analyzeCtx]
   );
   const montantRecuperable = useMemo(
     () =>
       actifs
-        .filter((d) => d.etape === "paiement" && analyzeDossier(d, now).columnKey !== "perte_totale")
+        .filter((d) => d.etape === "paiement" && analyzeDossier(d, now, analyzeCtx).columnKey !== "perte_totale")
         .reduce((s, d) => s + Math.max(0, (d.montant_facture ?? 0) - d.montant_recu), 0),
-    [actifs, now]
+    [actifs, now, analyzeCtx]
   );
   const montantAbandonne = useMemo(
     () =>
@@ -132,7 +152,7 @@ export default function AnalytiquePage() {
     const counts: Record<string, number> = {};
     PIPELINE_BUCKETS.forEach((b) => (counts[b.key] = 0));
     actifs.forEach((d) => {
-      const a = analyzeDossier(d, now);
+      const a = analyzeDossier(d, now, analyzeCtx);
       if (a.columnKey === "abandonne") return;
       if (d.etape === "qc" && d.qc_sous_statut !== "a_corriger") counts.qc++;
       else if (a.columnKey === "a_corriger") counts.a_corriger++;
@@ -147,7 +167,7 @@ export default function AnalytiquePage() {
       }
     });
     return PIPELINE_BUCKETS.map((b) => ({ ...b, value: counts[b.key] })).filter((b) => b.value > 0);
-  }, [actifs, now]);
+  }, [actifs, now, analyzeCtx]);
 
   // --- Performance par opérateur ---
   const perfOperateurs = useMemo(() => {
@@ -199,10 +219,32 @@ export default function AnalytiquePage() {
     })).filter((x) => x.value > 0);
   }, [juridiqueActifs]);
 
+  // --- Par édition (ignore le filtre d'édition pour comparer toutes les éditions de la sélection) ---
+  const parEdition = useMemo(() => {
+    const base = apply(everyDossier, { ignoreEdition: true }).filter((d) => !d.archived_at);
+    const map = new Map<
+      string,
+      { key: string; societe: (typeof base)[number]["societe"]; edition: number | null; nb: number; facture: number; recu: number; reste: number }
+    >();
+    base.forEach((d) => {
+      const key = `${d.societe}|${d.edition ?? "none"}`;
+      const cur = map.get(key) ?? { key, societe: d.societe, edition: d.edition, nb: 0, facture: 0, recu: 0, reste: 0 };
+      cur.nb += 1;
+      cur.facture += d.montant_facture ?? 0;
+      cur.recu += d.montant_recu;
+      if (d.etape === "paiement" && !d.abandonne_at) cur.reste += Math.max(0, (d.montant_facture ?? 0) - d.montant_recu);
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.societe !== b.societe) return a.societe.localeCompare(b.societe);
+      return (b.edition ?? -1) - (a.edition ?? -1);
+    });
+  }, [apply, everyDossier]);
+
   if (loading) {
     return (
       <>
-        <Topbar title="Analytique" description="Vue d'ensemble financière, performance et tendances" />
+        <Topbar title="Analytique" description="Vue d'ensemble financière, performance et tendances" scoped />
         <div className="px-8 py-6">
           <div className="h-64 animate-pulse rounded-xl bg-surface-2" />
         </div>
@@ -212,7 +254,7 @@ export default function AnalytiquePage() {
 
   return (
     <>
-      <Topbar title="Analytique" description="Vue d'ensemble financière, performance et tendances" />
+      <Topbar title="Analytique" description="Vue d'ensemble financière, performance et tendances" scoped />
       <div className="px-8 py-6">
         <div className="mb-5 flex gap-2">
           {(["30", "90", "365", "tout"] as Periode[]).map((p) => (
@@ -398,6 +440,55 @@ export default function AnalytiquePage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Par édition — la vue naturelle depuis que tout est classé par édition */}
+        <div className="mb-7 rounded-xl border border-border bg-surface shadow-card">
+          <div className="border-b border-border px-4 py-3 font-display text-[13.5px] font-semibold text-ink">
+            Par édition{scope.support !== "all" ? ` — ${scope.support === "papier" ? "papier" : "internet"} uniquement` : ""}
+          </div>
+          {parEdition.length === 0 ? (
+            <div className="px-4 py-6 text-center text-[12.5px] text-ink-2">Aucune donnée.</div>
+          ) : (
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-surface-2">
+                  {["Édition", "Dossiers", "Facturé", "Encaissé", "Reste dû", "Taux"].map((h) => (
+                    <th
+                      key={h}
+                      className="border-b border-border px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wide text-ink-2"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {parEdition.map((e) => (
+                  <tr key={e.key} className="border-b border-border last:border-none">
+                    <td className="px-4 py-2.5 text-[12.5px] font-semibold text-ink">
+                      {scope.societe === "all" && (
+                        <span
+                          className="mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                          style={{ backgroundColor: `${SOCIETE_COLORS[e.societe]}1A`, color: SOCIETE_COLORS[e.societe] }}
+                        >
+                          {SOCIETE_SHORT[e.societe]}
+                        </span>
+                      )}
+                      {e.edition == null ? "Sans édition" : editionTab(e.edition)}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-[12px] text-ink-2">{e.nb}</td>
+                    <td className="px-4 py-2.5 font-mono text-[12px] text-ink-2">{formatMontant(e.facture)}</td>
+                    <td className="px-4 py-2.5 font-mono text-[12px] font-semibold text-success">{formatMontant(e.recu)}</td>
+                    <td className="px-4 py-2.5 font-mono text-[12px] font-semibold text-ink">{formatMontant(e.reste)}</td>
+                    <td className="px-4 py-2.5 font-mono text-[12px] text-ink-2">
+                      {e.facture > 0 ? `${Math.round((e.recu / e.facture) * 100)}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Imports */}

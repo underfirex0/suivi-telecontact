@@ -1,4 +1,9 @@
+import type { ImportDiff } from "./import-diff";
+
 export type Etape = "qc" | "facturation" | "paiement" | "paye";
+export type Societe = "telecontact" | "kompass";
+export type Support = "internet" | "papier";
+export type EditionStatut = "en_cours" | "terminee";
 export type QcSousStatut = "attente" | "a_corriger" | "ok";
 export type ActionType = "appel" | "email" | "visite" | "promesse_paiement" | "autre";
 export type JuridiqueEtape =
@@ -9,6 +14,15 @@ export type JuridiqueEtape =
   | "jugement"
   | "execution"
   | "clos";
+
+export interface Edition {
+  id: string;
+  societe: Societe;
+  numero: number;
+  statut: EditionStatut;
+  date_sortie_annuaire: string | null; // papier : la facture part quand l'annuaire sort
+  created_at: string;
+}
 
 export interface Profile {
   id: string;
@@ -39,6 +53,12 @@ export interface Dossier {
   numero_facture: string | null;
   ville: string | null;
   courriel_niveau: 1 | 2 | 3 | null;
+
+  societe: Societe;
+  support: Support;
+  edition: number | null;
+  ordre: string | null;
+  code_firme: string | null;
 
   abandonne_at: string | null;
   abandonne_par: string | null;
@@ -109,44 +129,7 @@ export interface ImportBatch {
   nb_dossiers_soldes: number;
   nb_dossiers_partiels: number;
   montant_total_regle: number;
-  detail: {
-    nouveaux: {
-      source: "en_instance" | "reglement_seul";
-      client: string;
-      ville: string | null;
-      commercial: string | null;
-      numeroFacture: string;
-      montantFacture: number;
-      montantRecu: number;
-      dateCreation: string | null;
-      dateDebutVisibilite: string | null;
-      dateFinVisibilite: string | null;
-      courrielNiveau: 1 | 2 | 3 | null;
-      teleacteur: string | null;
-      observation: string | null;
-      paye: boolean;
-    }[];
-    paiementsExistants: {
-      dossierId: string;
-      client: string;
-      numeroFacture: string;
-      montantAjoute: number;
-      ancienRecu: number;
-      montantFacture: number | null;
-      nouveauTotal: number;
-      soldeApres: number;
-      devientPaye: boolean;
-      dateReglement: string | null;
-      source: "reglement" | "ecart_en_instance";
-    }[];
-    misesAJour: {
-      dossierId: string;
-      client: string;
-      numeroFacture: string;
-      champs: { champ: string; ancien: string; nouveau: string }[];
-    }[];
-    anomalies: { ligne: string; raison: string }[];
-  };
+  detail: ImportDiff;
   created_by: string | null;
   created_at: string;
 }
@@ -180,7 +163,8 @@ export interface DossierStatus {
   pctTemps: number | null; // % du temps de visibilité déjà consommé
   pctPaye: number | null; // % du montant facturé déjà réglé
   desyncRisque: boolean; // niveau >= 1 (conservé pour compatibilité d'affichage)
-  niveau: 0 | 1 | 2 | 3; // niveau d'écart entre temps consommé et montant payé
+  niveau: 0 | 1 | 2 | 3; // niveau de risque (écart temps/payé, ou ancienneté en jours si pas de visibilité)
+  niveauBase: "ecart" | "jours" | null; // sur quelle base le niveau est calculé
   promesseRompue: boolean; // le client avait promis de payer avant une date passée, toujours rien reçu
   rappelDu: boolean; // un rappel était prévu aujourd'hui ou avant, toujours pas traité
   joursSansAction: number | null; // jours depuis la dernière action humaine enregistrée

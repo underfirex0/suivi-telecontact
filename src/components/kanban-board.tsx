@@ -13,6 +13,8 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { TagBadges } from "@/components/tag-badges";
+import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, KANBAN_COLUMNS } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { initials } from "@/lib/utils";
@@ -40,7 +42,8 @@ export function KanbanBoard({
 }) {
   const router = useRouter();
   const now = useNow();
-  const analyzed = dossiers.map((d) => ({ d, a: analyzeDossier(d, now) }));
+  const { analyzeCtx } = useDossiers();
+  const analyzed = dossiers.map((d) => ({ d, a: analyzeDossier(d, now, analyzeCtx) }));
 
   const profileMap = new Map(profiles.map((p) => [p.id, p.full_name]));
 
@@ -123,6 +126,10 @@ export function KanbanBoard({
                         {a.sub}
                       </div>
                     )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <TagBadges d={d} />
+                    </div>
                   </button>
                 );
               })}

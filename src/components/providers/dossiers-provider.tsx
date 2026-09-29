@@ -11,16 +11,35 @@ import {
 import { useRouter } from "next/navigation";
 import { format, addHours, addDays } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
-import type { Dossier, HistoriqueEntry, Profile, Paiement, ActionEntry, ActionType, JuridiqueEtape, ImportBatch } from "@/lib/types";
+import type {
+  Dossier,
+  HistoriqueEntry,
+  Profile,
+  Paiement,
+  ActionEntry,
+  ActionType,
+  JuridiqueEtape,
+  ImportBatch,
+  Edition,
+  EditionStatut,
+  Societe,
+} from "@/lib/types";
 import { todayISO } from "@/lib/utils";
-import { JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
-import type { ImportDiff } from "@/lib/import-diff";
+import { JURIDIQUE_ETAPES, type AnalyzeContext } from "@/lib/dossier-logic";
+import { diffKpis, type ImportDiff } from "@/lib/import-diff";
 
 interface DossiersContextValue {
   dossiers: Dossier[];
   profiles: Profile[];
   currentProfile: Profile | null;
   loading: boolean;
+  editions: Edition[];
+  analyzeCtx: AnalyzeContext;
+  saveEdition: (
+    societe: Societe,
+    numero: number,
+    patch: { statut?: EditionStatut; date_sortie_annuaire?: string | null }
+  ) => Promise<void>;
   createDossier: (input: Partial<Dossier>) => Promise<string | null>;
   updateDossier: (id: string, patch: Partial<Dossier>, historiqueTexte?: string) => Promise<void>;
   archiveDossier: (id: string) => Promise<void>;
@@ -69,16 +88,35 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editions, setEditions] = useState<Edition[]>([]);
+
+  // Les éditions ne doivent JAMAIS empêcher le chargement des dossiers : en cas d'erreur
+  // (ex : migration pas encore lancée) on garde simplement une liste vide.
+  const loadEditions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("editions")
+      .select("*")
+      .order("numero", { ascending: false });
+    if (error) {
+      console.warn("Éditions indisponibles :", error.message);
+      return;
+    }
+    setEditions((data as Edition[]) ?? []);
+  }, [supabase]);
 
   const loadAll = useCallback(async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const [dossiersRes, profilesRes] = await Promise.all([
+    const [dossiersRes, profilesRes, editionsRes] = await Promise.all([
       supabase.from("dossiers").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("*").order("full_name", { ascending: true }),
+      supabase.from("editions").select("*").order("numero", { ascending: false }),
     ]);
+
+    if (editionsRes.error) console.warn("Éditions indisponibles :", editionsRes.error.message);
+    else if (editionsRes.data) setEditions(editionsRes.data as Edition[]);
 
     if (dossiersRes.data) setDossiers(dossiersRes.data as Dossier[]);
     if (profilesRes.data) {
@@ -118,6 +156,9 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
           });
         }
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "editions" }, () => {
+        loadEditions();
+      })
       .subscribe();
 
     return () => {
@@ -140,18 +181,51 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [supabase]
   );
 
+  const saveEdition = useCallback(
+    async (
+      societe: Societe,
+      numero: number,
+      patch: { statut?: EditionStatut; date_sortie_annuaire?: string | null }
+    ) => {
+      const { error } = await supabase
+        .from("editions")
+        .upsert({ societe, numero, ...patch }, { onConflict: "societe,numero" });
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+      await loadEditions();
+    },
+    [supabase, loadEditions]
+  );
+
   const createDossier = useCallback(
     async (input: Partial<Dossier>) => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      // La visibilité démarre au référencement (24h après création) et dure 365 jours,
-      // sauf si des dates historiques précises sont fournies (import de données 2025/2026).
+      const societe = input.societe ?? "telecontact";
+      const support = input.support ?? "internet";
+
+      // La visibilité (365 jours à partir du référencement, 24h après création) n'existe que
+      // pour Telecontact Internet. Papier et Kompass n'ont pas d'horloge de visibilité : ils
+      // sont suivis à l'ancienneté de la facture (voir dossier-logic.ts).
+      const avecHorloge = societe === "telecontact" && support === "internet";
       const dateDebutVisibilite =
-        input.date_debut_visibilite ?? format(addHours(new Date(), 24), "yyyy-MM-dd");
+        input.date_debut_visibilite ?? (avecHorloge ? format(addHours(new Date(), 24), "yyyy-MM-dd") : null);
       const dateFinVisibilite =
-        input.date_fin_visibilite ?? format(addDays(new Date(dateDebutVisibilite), 365), "yyyy-MM-dd");
+        input.date_fin_visibilite ??
+        (avecHorloge && dateDebutVisibilite
+          ? format(addDays(new Date(dateDebutVisibilite), 365), "yyyy-MM-dd")
+          : null);
+
+      if (input.edition != null) {
+        const { error: edErr } = await supabase
+          .from("editions")
+          .upsert({ societe, numero: input.edition }, { onConflict: "societe,numero", ignoreDuplicates: true });
+        if (edErr) console.warn("Création d'édition ignorée :", edErr.message);
+      }
 
       const { data, error } = await supabase
         .from("dossiers")
@@ -165,6 +239,11 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
           notes: input.notes ?? null,
           ville: input.ville ?? null,
           numero_facture: input.numero_facture ?? null,
+          societe,
+          support,
+          edition: input.edition ?? null,
+          ordre: input.ordre ?? null,
+          code_firme: input.code_firme ?? null,
           date_debut_visibilite: dateDebutVisibilite,
           date_fin_visibilite: dateFinVisibilite,
           etape: "qc",
@@ -476,42 +555,83 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
         data: { user },
       } = await supabase.auth.getUser();
 
+      // Clé société|facture : un n° de facture Kompass ne peut jamais être confondu avec un n° Telecontact.
+      const keyOf = (societe: Societe | undefined, facture: string) => `${societe ?? "telecontact"}|${facture}`;
+
+      // 0) Éditions : chaque (société, édition) rencontrée doit exister (non bloquant si la table manque)
+      const editionsVues = new Map<string, { societe: Societe; numero: number }>();
+      diff.nouveaux.forEach((n) => {
+        if (n.edition != null) {
+          const societe = n.societe ?? "telecontact";
+          editionsVues.set(`${societe}|${n.edition}`, { societe, numero: n.edition });
+        }
+      });
+      diff.misesAJour.forEach((maj) => {
+        maj.champs.forEach((c) => {
+          if (c.cle === "edition" && typeof c.valeur === "number") {
+            const d = dossiers.find((x) => x.id === maj.dossierId);
+            if (d) editionsVues.set(`${d.societe}|${c.valeur}`, { societe: d.societe, numero: c.valeur });
+          }
+        });
+      });
+      if (editionsVues.size > 0) {
+        const { error } = await supabase
+          .from("editions")
+          .upsert(Array.from(editionsVues.values()), { onConflict: "societe,numero", ignoreDuplicates: true });
+        if (error) console.warn("Création des éditions ignorée :", error.message);
+      }
+
       // 1) Créer les nouveaux dossiers en bloc
       const nouveauxPayload = diff.nouveaux.map((n) => {
-        const dateDebut = n.dateDebutVisibilite ?? n.dateCreation ?? todayISO();
+        const societe = n.societe ?? "telecontact";
+        const support = n.support ?? "internet";
+        // Horloge de visibilité : seulement si le fichier fournit une date de fin.
+        const avecHorloge = !!n.dateFinVisibilite;
         const notesParts: string[] = [];
         if (n.observation) notesParts.push(n.observation);
+        if (n.preContentieux) notesParts.push("Statut source : Pré-contentieux");
         if (n.teleacteur) notesParts.push(`Téléacteur historique : ${n.teleacteur}`);
         if (n.source === "reglement_seul") {
-          notesParts.push("Montant facturé estimé = montant réglé (déduit automatiquement, non confirmé par un fichier 'en instance').");
+          notesParts.push(
+            "Montant facturé estimé = montant réglé (déduit automatiquement, non confirmé par un fichier 'en instance')."
+          );
+          notesParts.push("Société supposée : Telecontact (le fichier des règlements ne l'indique pas).");
         }
         return {
           client_nom: n.client,
           ville: n.ville,
           commercial: n.commercial,
           numero_facture: n.numeroFacture,
+          societe,
+          support,
+          edition: n.edition ?? null,
+          ordre: n.ordre ?? null,
+          code_firme: n.codeFirme ?? null,
           date_bc: n.dateCreation ?? todayISO(),
-          date_debut_visibilite: dateDebut,
-          date_fin_visibilite: n.dateFinVisibilite,
+          date_debut_visibilite: avecHorloge ? n.dateDebutVisibilite ?? n.dateCreation ?? todayISO() : null,
+          date_fin_visibilite: avecHorloge ? n.dateFinVisibilite : null,
           montant_facture: n.montantFacture,
           courriel_niveau: n.courrielNiveau,
           etape: n.paye ? "paye" : "paiement",
           qc_sous_statut: "ok",
           date_qc: n.dateCreation ?? todayISO(),
           date_facture: n.dateCreation ?? todayISO(),
-          date_paiement: n.paye ? todayISO() : null,
+          date_paiement: n.paye ? n.dateDernierReglement ?? todayISO() : null,
           notes: notesParts.length ? notesParts.join(" — ") : null,
           created_by: user?.id ?? null,
         };
       });
 
-      let insertedDossiers: { id: string; numero_facture: string | null }[] = [];
+      let insertedDossiers: { id: string; numero_facture: string | null; societe: Societe }[] = [];
       if (nouveauxPayload.length > 0) {
-        const { data, error } = await supabase.from("dossiers").insert(nouveauxPayload).select("id, numero_facture");
+        const { data, error } = await supabase
+          .from("dossiers")
+          .insert(nouveauxPayload)
+          .select("id, numero_facture, societe");
         if (error) throw error;
-        insertedDossiers = data ?? [];
+        insertedDossiers = (data ?? []) as typeof insertedDossiers;
       }
-      const newIdByFacture = new Map(insertedDossiers.map((d) => [d.numero_facture ?? "", d.id]));
+      const newIdByKey = new Map(insertedDossiers.map((d) => [keyOf(d.societe, d.numero_facture ?? ""), d.id]));
 
       // 2) Construire les paiements à insérer (nouveaux dossiers avec montant déjà reçu + paiements sur dossiers existants)
       const paiementsPayload: {
@@ -524,12 +644,12 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
 
       diff.nouveaux.forEach((n) => {
         if (n.montantRecu <= 0) return;
-        const id = newIdByFacture.get(n.numeroFacture);
+        const id = newIdByKey.get(keyOf(n.societe, n.numeroFacture));
         if (!id) return;
         paiementsPayload.push({
           dossier_id: id,
           montant: n.montantRecu,
-          date_paiement: n.dateCreation ?? todayISO(),
+          date_paiement: n.dateDernierReglement ?? n.dateCreation ?? todayISO(),
           note: `Import "${libelle}" — montant reçu à la création.`,
           created_by: user?.id ?? null,
         });
@@ -553,31 +673,40 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error;
       }
 
-      // 3) Appliquer les mises à jour de champs (courriel, ville, commercial, observation)
-      //    sur les dossiers déjà connus — un update séparé par dossier, chaque champ modifié.
+      // 3) Appliquer les mises à jour de champs sur les dossiers déjà connus.
+      //    Chaque changement porte sa clé technique (cle) et sa valeur : plus aucune
+      //    correspondance fragile par libellé. Liste blanche des champs modifiables.
+      const CHAMPS_MODIFIABLES = new Set([
+        "courriel_niveau",
+        "ville",
+        "commercial",
+        "edition",
+        "support",
+        "ordre",
+        "code_firme",
+      ]);
       for (const maj of diff.misesAJour) {
         const patch: Record<string, unknown> = {};
         for (const c of maj.champs) {
-          if (c.champ === "Niveau de courriel") {
-            patch.courriel_niveau = c.nouveau === "Courriel 1" ? 1 : c.nouveau === "Courriel 2" ? 2 : 3;
-          }
-          if (c.champ === "Ville") patch.ville = c.nouveau;
-          if (c.champ === "Commercial") patch.commercial = c.nouveau;
-          if (c.champ === "Nouvelle observation") {
+          if (!c.cle) continue;
+          if (c.cle === "notes_append") {
             const current = dossiers.find((d) => d.id === maj.dossierId);
             const existingNotes = current?.notes ?? "";
             patch.notes = existingNotes ? `${existingNotes} — ${c.nouveau}` : c.nouveau;
+          } else if (CHAMPS_MODIFIABLES.has(c.cle)) {
+            patch[c.cle] = c.valeur ?? null;
           }
         }
         if (Object.keys(patch).length > 0) {
-          await supabase.from("dossiers").update(patch).eq("id", maj.dossierId);
+          const { error } = await supabase.from("dossiers").update(patch).eq("id", maj.dossierId);
+          if (error) throw error;
         }
       }
 
       // 4) Historique (création + paiements + mises à jour) en un seul insert groupé
       const historiquePayload: { dossier_id: string; auteur_id: string | null; texte: string }[] = [];
       diff.nouveaux.forEach((n) => {
-        const id = newIdByFacture.get(n.numeroFacture);
+        const id = newIdByKey.get(keyOf(n.societe, n.numeroFacture));
         if (!id) return;
         historiquePayload.push({
           dossier_id: id,
@@ -606,14 +735,12 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 5) Enregistrer le batch dans l'historique des imports (visibilité permanente)
+      const k = diffKpis(diff);
       const kpis = {
-        nb_nouveaux_dossiers: diff.nouveaux.length,
-        nb_dossiers_soldes:
-          diff.nouveaux.filter((n) => n.paye).length + diff.paiementsExistants.filter((p) => p.devientPaye).length,
-        nb_dossiers_partiels: diff.paiementsExistants.filter((p) => !p.devientPaye).length,
-        montant_total_regle:
-          diff.nouveaux.reduce((s, n) => s + n.montantRecu, 0) +
-          diff.paiementsExistants.reduce((s, p) => s + p.montantAjoute, 0),
+        nb_nouveaux_dossiers: k.nbNouveaux,
+        nb_dossiers_soldes: k.nbSoldes,
+        nb_dossiers_partiels: k.nbPartiels,
+        montant_total_regle: k.montantTotalRegle,
       };
       await supabase.from("imports").insert({
         libelle,
@@ -625,7 +752,7 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
 
       await loadAll();
     },
-    [supabase, loadAll]
+    [supabase, loadAll, dossiers]
   );
 
   const fetchImportBatches = useCallback(async () => {
@@ -670,6 +797,8 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     [updateDossier]
   );
 
+  const analyzeCtx = useMemo<AnalyzeContext>(() => ({ editions }), [editions]);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     router.push("/login");
@@ -681,6 +810,9 @@ export function DossiersProvider({ children }: { children: React.ReactNode }) {
     profiles,
     currentProfile,
     loading,
+    editions,
+    analyzeCtx,
+    saveEdition,
     createDossier,
     updateDossier,
     archiveDossier,

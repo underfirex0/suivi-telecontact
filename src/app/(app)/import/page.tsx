@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Upload, FileSpreadsheet, X, CheckCircle2, Loader2 } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -10,48 +10,101 @@ import { Label } from "@/components/ui/label";
 import { ImportDiffView } from "@/components/import-diff-view";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { parseExcelFile, type ParsedFile } from "@/lib/import-parser";
-import { computeImportDiff, type ImportDiff } from "@/lib/import-diff";
+import { computeImportDiff } from "@/lib/import-diff";
+import { SOCIETE_LABELS, SUPPORT_LABELS, editionTab } from "@/lib/tags";
 import { todayISO } from "@/lib/utils";
-import type { ImportBatch, Profile } from "@/lib/types";
+import type { ImportBatch, Paiement, Profile } from "@/lib/types";
 
 const KIND_LABELS: Record<string, string> = {
-  en_instance: "Dossiers en instance",
+  en_instance: "Dossiers (débiteurs / en instance)",
   reglements: "Liste des règlements",
+  impayes: "Fichier d'impayés — à importer depuis la page Impayés",
   inconnu: "Non reconnu",
 };
 
+/** Résumé des étiquettes lues DANS un fichier (société · édition · support) — pour vérifier avant d'importer. */
+function fileTags(f: ParsedFile): string {
+  const tags = new Set<string>();
+  if (f.kind === "en_instance") {
+    f.enInstanceRows.forEach((r) => {
+      const soc = r.societe ? SOCIETE_LABELS[r.societe] : "Société ?";
+      tags.add(`${soc} · ${r.edition != null ? editionTab(r.edition) : "sans édition"} · ${SUPPORT_LABELS[r.support]}`);
+    });
+  } else if (f.kind === "reglements") {
+    f.reglementRows.forEach((r) => {
+      tags.add(`${r.edition != null ? editionTab(r.edition) : "sans édition"}${r.support ? " · " + SUPPORT_LABELS[r.support] : ""}`);
+    });
+  }
+  return Array.from(tags).join("  |  ");
+}
+
+function fileRowCount(f: ParsedFile): number {
+  return f.kind === "en_instance"
+    ? f.enInstanceRows.length
+    : f.kind === "reglements"
+    ? f.reglementRows.length
+    : f.kind === "impayes"
+    ? f.impayeRows.length
+    : 0;
+}
+
 export default function ImportPage() {
-  const { dossiers, commitImport, fetchImportBatches, profiles } = useDossiers();
+  const { dossiers, commitImport, fetchImportBatches, fetchAllPaiements, profiles } = useDossiers();
 
   const [parsedFiles, setParsedFiles] = useState<ParsedFile[]>([]);
-  const [diff, setDiff] = useState<ImportDiff | null>(null);
+  // Paiements déjà enregistrés : l'import ne compte jamais deux fois le même règlement.
+  const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [libelle, setLibelle] = useState(`Semaine du ${todayISO()}`);
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [done, setDone] = useState(false);
 
+  useEffect(() => {
+    fetchAllPaiements().then(setPaiements);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // L'aperçu est toujours calculé à partir de l'état réel : fichiers + dossiers + paiements existants.
+  const diff = useMemo(
+    () => (parsedFiles.length > 0 ? computeImportDiff(parsedFiles, dossiers, paiements) : null),
+    [parsedFiles, dossiers, paiements]
+  );
+
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
     setParsing(true);
     const files = Array.from(fileList);
-    const parsed = await Promise.all(files.map((f) => parseExcelFile(f)));
-    const allParsed = [...parsedFiles, ...parsed];
-    setParsedFiles(allParsed);
-    setDiff(computeImportDiff(allParsed, dossiers));
+    const [parsedPerFile, freshPaiements] = await Promise.all([
+      Promise.all(files.map((f) => parseExcelFile(f))),
+      fetchAllPaiements(),
+    ]);
+    setPaiements(freshPaiements);
+    setParsedFiles((prev) => [...prev, ...parsedPerFile.flat()]);
     setParsing(false);
   }
 
   function removeFile(index: number) {
-    const next = parsedFiles.filter((_, i) => i !== index);
-    setParsedFiles(next);
-    setDiff(next.length > 0 ? computeImportDiff(next, dossiers) : null);
+    setParsedFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleConfirm() {
     if (!diff) return;
     setCommitting(true);
     try {
+      // Dernier garde-fou : on recalcule avec les paiements les plus récents. Si quelqu'un d'autre a importé
+      // entre-temps, l'aperçu change — on l'affiche à nouveau plutôt que d'enregistrer deux fois.
+      const fresh = await fetchAllPaiements();
+      const freshDiff = computeImportDiff(parsedFiles, dossiers, fresh);
+      if (JSON.stringify(freshDiff) !== JSON.stringify(diff)) {
+        setPaiements(fresh);
+        alert(
+          "Les données ont changé depuis l'aperçu (un autre import a peut-être eu lieu). L'aperçu vient d'être actualisé : vérifiez-le puis confirmez à nouveau."
+        );
+        setCommitting(false);
+        return;
+      }
       await commitImport(diff, libelle, parsedFiles.map((f) => f.filename));
+      setPaiements(await fetchAllPaiements());
       setDone(true);
     } catch (e) {
       alert("Erreur lors de l'import : " + (e as Error).message);
@@ -61,9 +114,9 @@ export default function ImportPage() {
 
   function resetAll() {
     setParsedFiles([]);
-    setDiff(null);
     setLibelle(`Semaine du ${todayISO()}`);
     setDone(false);
+    fetchAllPaiements().then(setPaiements);
   }
 
   return (
@@ -94,7 +147,8 @@ export default function ImportPage() {
                     Déposer les fichiers Excel de la semaine
                   </div>
                   <div className="mb-4 text-[12.5px] text-ink-2">
-                    Liste des règlements, fichiers "en instance"... le type est détecté automatiquement.
+                    Débiteurs (papier / internet, Telecontact / Kompass), en instance, règlements... le type, la société,
+                    l&apos;édition et le support sont lus dans les fichiers.
                   </div>
                   <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-dark">
                     <Upload size={14} />
@@ -104,7 +158,10 @@ export default function ImportPage() {
                       accept=".xls,.xlsx"
                       multiple
                       className="hidden"
-                      onChange={(e) => handleFiles(e.target.files)}
+                      onChange={(e) => {
+                        handleFiles(e.target.files);
+                        e.target.value = ""; // permet de redéposer le même fichier après l'avoir retiré
+                      }}
                     />
                   </label>
                 </div>
@@ -127,13 +184,11 @@ export default function ImportPage() {
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[12.5px] font-semibold text-ink">{f.filename}</div>
                           <div className="text-[11px] text-ink-2">
-                            {KIND_LABELS[f.kind]} ·{" "}
-                            {f.kind === "en_instance"
-                              ? `${f.enInstanceRows.length} lignes`
-                              : f.kind === "reglements"
-                              ? `${f.reglementRows.length} lignes`
-                              : "—"}
+                            {KIND_LABELS[f.kind]} · {fileRowCount(f)} lignes
                           </div>
+                          {fileTags(f) && (
+                            <div className="mt-0.5 text-[11px] font-semibold text-brand">{fileTags(f)}</div>
+                          )}
                         </div>
                         <button
                           onClick={() => removeFile(i)}

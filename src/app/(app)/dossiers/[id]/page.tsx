@@ -27,11 +27,12 @@ import { AjouterPaiementDialog } from "@/components/ajouter-paiement-dialog";
 import { ActionLogDialog } from "@/components/action-log-dialog";
 import { AbandonDialog } from "@/components/abandon-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
-import { analyzeDossier, dateReferencement, JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
+import { analyzeDossier, dateReferencement, findEdition, usesReferencementDelay, JURIDIQUE_ETAPES } from "@/lib/dossier-logic";
+import { SOCIETES, SUPPORTS, editionTab } from "@/lib/tags";
 import { formatMontant, formatDate } from "@/lib/utils";
 import { STATUS_HEX } from "@/lib/status-colors";
 import { useNow } from "@/lib/use-now";
-import type { HistoriqueEntry, Paiement, ActionEntry, JuridiqueEtape } from "@/lib/types";
+import type { HistoriqueEntry, Paiement, ActionEntry, JuridiqueEtape, Societe, Support } from "@/lib/types";
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
   appel: "Appel",
@@ -70,6 +71,8 @@ export default function DossierDetailPage() {
     claimDossier,
     abandonDossier,
     reactivateDossier,
+    analyzeCtx,
+    editions,
   } = useDossiers();
 
   const dossier = dossiers.find((d) => d.id === params.id);
@@ -87,6 +90,9 @@ export default function DossierDetailPage() {
   const [referenceTribunal, setReferenceTribunal] = useState("");
   const [montantJugement, setMontantJugement] = useState("");
   const [operateurId, setOperateurId] = useState("");
+  const [societe, setSocieteState] = useState<Societe>("telecontact");
+  const [support, setSupportState] = useState<Support>("internet");
+  const [editionVal, setEditionVal] = useState("none"); // "none" = sans édition
   const [historique, setHistorique] = useState<HistoriqueEntry[]>([]);
   const [paiements, setPaiements] = useState<Paiement[]>([]);
   const [actions, setActions] = useState<ActionEntry[]>([]);
@@ -113,6 +119,9 @@ export default function DossierDetailPage() {
       setReferenceTribunal(dossier.reference_tribunal ?? "");
       setMontantJugement(dossier.montant_jugement != null ? String(dossier.montant_jugement) : "");
       setOperateurId(dossier.operateur_id ?? "");
+      setSocieteState(dossier.societe);
+      setSupportState(dossier.support);
+      setEditionVal(dossier.edition != null ? String(dossier.edition) : "none");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dossier?.id]);
@@ -151,14 +160,22 @@ export default function DossierDetailPage() {
     );
   }
 
-  const a = analyzeDossier(dossier, now);
+  const a = analyzeDossier(dossier, now, analyzeCtx);
   const isArchived = !!dossier.archived_at;
   const isAbandonne = !!dossier.abandonne_at;
   const reste = dossier.montant_facture != null ? dossier.montant_facture - dossier.montant_recu : null;
+  // Horloge de visibilité : seulement Telecontact Internet. Papier et Kompass n'en ont pas — le panneau
+  // s'affiche quand même (montants, ancienneté) mais sans la barre de temps.
+  const aHorloge = !!(dossier.date_debut_visibilite && dossier.date_fin_visibilite);
   const showVisibilitePanel =
-    (dossier.etape === "paiement" || dossier.etape === "paye") &&
-    dossier.date_debut_visibilite &&
-    dossier.date_fin_visibilite;
+    (dossier.etape === "paiement" || dossier.etape === "paye") && (aHorloge || dossier.montant_facture != null);
+  const editionsDeLaSociete = Array.from(
+    new Set([
+      ...editions.filter((e) => e.societe === societe).map((e) => e.numero),
+      ...(dossier.societe === societe && dossier.edition != null ? [dossier.edition] : []),
+    ])
+  ).sort((x, y) => y - x);
+  const editionDossier = findEdition(analyzeCtx, dossier.societe, dossier.edition);
 
   async function handleSave() {
     if (!clientNom.trim()) {
@@ -178,6 +195,9 @@ export default function DossierDetailPage() {
         numero_facture: numeroFacture.trim() || null,
         notes: notes.trim() || null,
         operateur_id: operateurId || null,
+        societe,
+        support,
+        edition: editionVal === "none" ? null : Number(editionVal),
         juridique_notes: juridiqueNotes.trim() || null,
         avocat_referent: avocatReferent.trim() || null,
         reference_tribunal: referenceTribunal.trim() || null,
@@ -292,6 +312,69 @@ export default function DossierDetailPage() {
               <Input id="d-facture" value={numeroFacture} onChange={(e) => setNumeroFacture(e.target.value)} />
             </div>
             <div>
+              <Label>Société</Label>
+              <Select
+                value={societe}
+                onValueChange={(v) => {
+                  const nouvelle = v as Societe;
+                  setSocieteState(nouvelle);
+                  // Une édition n'a de sens que dans sa société : si elle n'existe pas dans l'autre, on la retire
+                  const existe = editions.some((e) => e.societe === nouvelle && String(e.numero) === editionVal);
+                  if (!existe) setEditionVal("none");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOCIETES.map((s) => (
+                    <SelectItem key={s.key} value={s.key}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Support</Label>
+              <Select value={support} onValueChange={(v) => setSupportState(v as Support)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTS.map((s) => (
+                    <SelectItem key={s.key} value={s.key}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Édition</Label>
+              <Select value={editionVal} onValueChange={setEditionVal}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sans édition</SelectItem>
+                  {editionsDeLaSociete.map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {editionTab(n)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {(dossier.ordre || dossier.code_firme) && (
+              <div>
+                <Label>Ordre / code firme</Label>
+                <div className="pt-1.5 font-mono text-[13px] font-medium text-ink-2">
+                  {dossier.ordre ?? "—"} · {dossier.code_firme ?? "—"}
+                </div>
+              </div>
+            )}
+            <div>
               <Label>Opérateur affecté</Label>
               <div className="flex gap-2">
                 <div className="flex-1">
@@ -315,24 +398,37 @@ export default function DossierDetailPage() {
                 )}
               </div>
             </div>
-            <div>
-              <Label>{dateReferencement(dossier.created_at) > now ? "Référencement prévu" : "Référencé le"}</Label>
-              <div className="pt-1.5 font-mono text-[13.5px] font-medium text-ink">
-                {dateReferencement(dossier.created_at).toLocaleString("fr-FR", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+            {usesReferencementDelay(dossier) ? (
+              <div>
+                <Label>{dateReferencement(dossier.created_at) > now ? "Référencement prévu" : "Référencé le"}</Label>
+                <div className="pt-1.5 font-mono text-[13.5px] font-medium text-ink">
+                  {dateReferencement(dossier.created_at).toLocaleString("fr-FR", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
               </div>
-            </div>
+            ) : dossier.support === "papier" ? (
+              <div>
+                <Label>Sortie de l&apos;annuaire</Label>
+                <div className="pt-1.5 text-[13.5px] font-medium text-ink">
+                  {editionDossier?.date_sortie_annuaire ? (
+                    <span className="font-mono">{formatDate(editionDossier.date_sortie_annuaire)}</span>
+                  ) : (
+                    <span className="text-ink-3">Non définie — à renseigner dans « Éditions »</span>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {showVisibilitePanel && (
             <div className="mb-5 rounded-xl border border-border p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="font-display text-[13.5px] font-semibold text-ink">Visibilité &amp; règlement</div>
+                <div className="font-display text-[13.5px] font-semibold text-ink">{aHorloge ? "Visibilité & règlement" : "Règlement"}</div>
                 {a.niveau > 0 && (
                   <Badge color={a.niveau === 3 ? "perte" : a.niveau === 2 ? "danger" : "warning"}>
                     <AlertTriangle size={11} /> Niveau {a.niveau}
@@ -340,6 +436,8 @@ export default function DossierDetailPage() {
                 )}
               </div>
 
+              {aHorloge && (
+                <>
               <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-ink-2">
                 <span>Temps de visibilité consommé</span>
                 <span className="font-mono font-semibold text-ink">
@@ -355,6 +453,8 @@ export default function DossierDetailPage() {
                   }}
                 />
               </div>
+                </>
+              )}
 
               <div className="mb-1.5 flex items-center justify-between text-[11.5px] text-ink-2">
                 <span>Montant réglé</span>
@@ -384,7 +484,11 @@ export default function DossierDetailPage() {
                 </div>
               </div>
               <div className="mt-2 text-[11px] text-ink-3">
-                Visibilité du {formatDate(dossier.date_debut_visibilite)} au {formatDate(dossier.date_fin_visibilite)}
+                {aHorloge
+                  ? `Visibilité du ${formatDate(dossier.date_debut_visibilite)} au ${formatDate(dossier.date_fin_visibilite)}`
+                  : a.niveauBase === "jours"
+                  ? "Pas de suivi de visibilité pour ce dossier : le niveau de risque suit l'ancienneté de la facture (15 / 25 / 90 jours)."
+                  : ""}
               </div>
             </div>
           )}

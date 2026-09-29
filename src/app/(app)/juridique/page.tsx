@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { useDossiers } from "@/components/providers/dossiers-provider";
+import { useScope } from "@/components/providers/scope-provider";
+import { TagBadges } from "@/components/tag-badges";
 import { analyzeDossier, JURIDIQUE_ETAPES, COURRIEL_CONFIG } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { formatMontant, formatDate, initials, cn } from "@/lib/utils";
@@ -26,8 +28,18 @@ const TYPE_LABELS: Record<string, string> = {
 type SortMode = "anciennete" | "montant" | "client";
 
 export default function JuridiquePage() {
-  const { dossiers, profiles, toggleJuridique, updateJuridiqueEtape, claimDossier, currentProfile, fetchAllActions } =
-    useDossiers();
+  const {
+    dossiers: everyDossier,
+    profiles,
+    toggleJuridique,
+    updateJuridiqueEtape,
+    claimDossier,
+    currentProfile,
+    fetchAllActions,
+    analyzeCtx,
+  } = useDossiers();
+  const { apply } = useScope();
+  const dossiers = useMemo(() => apply(everyDossier), [apply, everyDossier]);
   const router = useRouter();
   const now = useNow();
 
@@ -119,7 +131,7 @@ export default function JuridiquePage() {
 
   return (
     <>
-      <Topbar title="Suivi juridique" description="Dossiers en contentieux — étapes, échéances, montants" />
+      <Topbar title="Suivi juridique" description="Dossiers en contentieux — étapes, échéances, montants" scoped />
       <div className="px-8 py-6">
         <div className="mb-6 grid grid-cols-4 gap-3.5">
           <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
@@ -243,7 +255,7 @@ export default function JuridiquePage() {
             {filtered.map((d) => {
               const etape = d.juridique_etape ?? "en_attente";
               const cfg = JURIDIQUE_ETAPES.find((e) => e.key === etape)!;
-              const a = analyzeDossier(d, now);
+              const a = analyzeDossier(d, now, analyzeCtx);
               const reste = Math.max(0, (d.montant_facture ?? 0) - d.montant_recu);
               const jours = d.juridique_etape_maj_at
                 ? differenceInCalendarDays(now, parseISO(d.juridique_etape_maj_at))
@@ -269,6 +281,7 @@ export default function JuridiquePage() {
                             Non affecté
                           </span>
                         )}
+                        <TagBadges d={d} />
                         {d.ville && (
                           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10.5px] font-semibold text-ink-2">
                             {d.ville}

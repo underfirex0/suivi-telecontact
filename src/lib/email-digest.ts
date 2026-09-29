@@ -4,6 +4,7 @@ import { STATUS_HEX } from "./status-colors";
 interface AlertRow {
   clientNom: string;
   offre: string | null;
+  tag?: string;
   status: DossierStatus;
   dossierId: string;
   reste: number;
@@ -27,6 +28,7 @@ function row(a: AlertRow, appUrl: string): string {
               </span>
               <div style="margin-top:8px;font-size:14px;font-weight:bold;color:#12131A;">${a.clientNom}</div>
               <div style="font-size:12.5px;color:#5B6072;margin-top:2px;">${a.offre ?? "—"}</div>
+              ${a.tag ? `<div style="font-size:11px;color:#9297A6;margin-top:3px;">${a.tag}</div>` : ""}
               <div style="font-size:11.5px;color:#9297A6;margin-top:6px;font-family:monospace;">${a.status.sub}</div>
             </td>
             <td style="text-align:right;vertical-align:middle;white-space:nowrap;">
@@ -61,7 +63,8 @@ function section(title: string, alerts: AlertRow[], appUrl: string): string {
 export function buildDigestEmailHtml(
   mesDossiers: AlertRow[],
   nonAssignes: AlertRow[],
-  appUrl: string
+  appUrl: string,
+  nbEditionsTerminees = 0
 ): string {
   const today = new Date().toLocaleDateString("fr-FR", {
     weekday: "long",
@@ -108,6 +111,14 @@ export function buildDigestEmailHtml(
               </td>
             </tr>
             ${body}
+            ${
+              nbEditionsTerminees > 0
+                ? `<tr><td style="padding:12px 24px 0;font-family:Arial,sans-serif;font-size:12px;color:#5B6072;">
+                     + ${nbEditionsTerminees} dossier${nbEditionsTerminees > 1 ? "s" : ""} d'éditions terminées encore en alerte
+                     (non détaillés ici — consultables dans l'application).
+                   </td></tr>`
+                : ""
+            }
             <tr>
               <td style="padding:16px 24px 24px;text-align:center;">
                 <a href="${appUrl}/dossiers" style="color:#0E7C7B;font-size:12.5px;font-weight:bold;text-decoration:none;">

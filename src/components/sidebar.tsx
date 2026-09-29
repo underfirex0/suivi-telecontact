@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Kanban, Users, Plus, Activity, Scale, Upload, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Kanban, Users, Plus, Activity, Scale, Upload, BarChart3, FileWarning } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/dossiers", label: "Dossiers", icon: Kanban },
   { href: "/analytique", label: "Analytique", icon: BarChart3 },
   { href: "/import", label: "Import", icon: Upload },
+  { href: "/impayes", label: "Impayés", icon: FileWarning },
   { href: "/juridique", label: "Suivi juridique", icon: Scale },
   { href: "/activite", label: "Activité", icon: Activity },
   { href: "/operateurs", label: "Opérateurs", icon: Users },

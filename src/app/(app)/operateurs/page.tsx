@@ -8,7 +8,7 @@ import { analyzeDossier } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 
 export default function OperateursPage() {
-  const { profiles, dossiers: allDossiers, loading } = useDossiers();
+  const { profiles, dossiers: allDossiers, loading, analyzeCtx } = useDossiers();
   const dossiers = allDossiers.filter((d) => !d.archived_at && !d.abandonne_at);
   const now = useNow();
 
@@ -22,11 +22,11 @@ export default function OperateursPage() {
           (sum, d) => sum + Math.max(0, (d.montant_facture ?? 0) - d.montant_recu),
           0
         );
-        const alertesCount = enPaiement.filter((d) => analyzeDossier(d, now).alert).length;
+        const alertesCount = enPaiement.filter((d) => analyzeDossier(d, now, analyzeCtx).alert).length;
         return { profile: p, actifsCount: actifs.length, montantEnJeu, alertesCount };
       })
       .sort((a, b) => b.montantEnJeu - a.montantEnJeu);
-  }, [profiles, dossiers, now]);
+  }, [profiles, dossiers, now, analyzeCtx]);
 
   return (
     <>

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TagBadges } from "@/components/tag-badges";
+import { useDossiers } from "@/components/providers/dossiers-provider";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { formatDate, formatMontant } from "@/lib/utils";
@@ -17,6 +19,7 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
   const [etapeFilter, setEtapeFilter] = useState("all");
   const [alerteFilter, setAlerteFilter] = useState("all");
   const now = useNow();
+  const { analyzeCtx } = useDossiers();
 
   const profileMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -25,12 +28,12 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
   }, [profiles]);
 
   const analyzed = useMemo(() => {
-    let list = dossiers.map((d) => ({ d, a: analyzeDossier(d, now) }));
+    let list = dossiers.map((d) => ({ d, a: analyzeDossier(d, now, analyzeCtx) }));
     if (etapeFilter !== "all") list = list.filter((x) => x.d.etape === etapeFilter);
     if (alerteFilter === "late") list = list.filter((x) => x.a.alert);
     list.sort((x, y) => y.a.severity - x.a.severity);
     return list;
-  }, [dossiers, etapeFilter, alerteFilter, now]);
+  }, [dossiers, etapeFilter, alerteFilter, now, analyzeCtx]);
 
   return (
     <div>
@@ -60,7 +63,7 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
         </div>
         <Button
           variant="secondary"
-          onClick={() => exportDossiersToCsv(analyzed.map((x) => x.d), profiles)}
+          onClick={() => exportDossiersToCsv(analyzed.map((x) => x.d), profiles, analyzeCtx)}
         >
           <Download size={14} />
           Exporter CSV ({analyzed.length})
@@ -71,7 +74,7 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-surface-2">
-              {["Client", "Offre", "Statut", "Date BC", "Montant", "Opérateur", "Détail"].map((h) => (
+              {["Client", "Édition", "Offre", "Statut", "Date BC", "Montant", "Opérateur", "Détail"].map((h) => (
                 <th
                   key={h}
                   className="border-b border-border px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-2"
@@ -84,7 +87,7 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
           <tbody>
             {analyzed.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-[13px] text-ink-3">
+                <td colSpan={8} className="px-4 py-8 text-center text-[13px] text-ink-3">
                   Aucun dossier
                 </td>
               </tr>
@@ -96,6 +99,11 @@ export function DossierTable({ dossiers, profiles }: { dossiers: Dossier[]; prof
                 className="cursor-pointer border-b border-border transition-colors last:border-none hover:bg-surface-2"
               >
                 <td className="px-3.5 py-3 text-[13px] font-semibold text-ink">{d.client_nom}</td>
+                <td className="px-3.5 py-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <TagBadges d={d} />
+                  </div>
+                </td>
                 <td className="px-3.5 py-3 text-[13px] text-ink-2">{d.offre || "—"}</td>
                 <td className="px-3.5 py-3">
                   <Badge color={a.color}>{a.label}</Badge>

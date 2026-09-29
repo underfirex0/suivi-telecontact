@@ -2,17 +2,21 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PartyPopper, UserX, PhoneOff, CalendarClock } from "lucide-react";
+import { PartyPopper, UserX, PhoneOff, CalendarClock, BookOpen } from "lucide-react";
 import { Topbar } from "@/components/topbar";
 import { Badge } from "@/components/ui/badge";
 import { useDossiers } from "@/components/providers/dossiers-provider";
+import { useScope } from "@/components/providers/scope-provider";
 import { analyzeDossier, scoreFileAction } from "@/lib/dossier-logic";
 import { todayISO, formatMontant } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { STATUS_HEX } from "@/lib/status-colors";
 
 export default function DashboardPage() {
-  const { dossiers: allDossiers, loading } = useDossiers();
+  const { dossiers: everyDossier, loading, analyzeCtx } = useDossiers();
+  const { apply } = useScope();
+  // Tout le tableau de bord respecte la sélection Société → Édition → Support
+  const allDossiers = useMemo(() => apply(everyDossier), [apply, everyDossier]);
   const dossiers = useMemo(
     () => allDossiers.filter((d) => !d.archived_at && !d.abandonne_at),
     [allDossiers]
@@ -31,8 +35,8 @@ export default function DashboardPage() {
   }, [dossiers, search]);
 
   const analyzed = useMemo(
-    () => filtered.map((d) => ({ d, a: analyzeDossier(d, now) })),
-    [filtered, now]
+    () => filtered.map((d) => ({ d, a: analyzeDossier(d, now, analyzeCtx) })),
+    [filtered, now, analyzeCtx]
   );
 
   const enPaiement = analyzed.filter((x) => x.d.etape === "paiement");
@@ -62,6 +66,8 @@ export default function DashboardPage() {
   const nonAssignes = fileAction.filter((x) => !x.d.operateur_id);
   const promessesRompues = fileAction.filter((x) => x.a.promesseRompue);
   const rappelsDus = fileAction.filter((x) => x.a.rappelDu);
+  // Papier : l'annuaire est sorti mais la facture n'est pas encore émise
+  const papierAFacturer = analyzed.filter((x) => x.d.etape === "facturation" && x.d.support === "papier" && x.a.alert);
   const niveau1 = enPaiement.filter((x) => x.a.niveau === 1).length;
   const niveau2 = enPaiement.filter((x) => x.a.niveau === 2).length;
   const niveau3 = enPaiement.filter((x) => x.a.niveau === 3).length;
@@ -79,6 +85,7 @@ export default function DashboardPage() {
         description="Vue d'ensemble financière et priorités du jour"
         search={search}
         onSearchChange={setSearch}
+        scoped
       />
       <div className="px-8 py-6">
         {loading ? (
@@ -136,6 +143,17 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+
+            {papierAFacturer.length > 0 && (
+              <button
+                onClick={() => router.push("/dossiers")}
+                className="mb-3 flex w-full items-center gap-2 rounded-xl border border-[#3B4CB8]/30 bg-[#EEF0FB] px-4 py-3 text-left text-[13px] font-semibold text-[#3B4CB8]"
+              >
+                <BookOpen size={15} />
+                {papierAFacturer.length} dossier{papierAFacturer.length > 1 ? "s" : ""} papier : l&apos;annuaire est sorti,
+                la facture doit être émise.
+              </button>
+            )}
 
             {(niveau1 > 0 || niveau2 > 0 || niveau3 > 0) && (
               <div className="mb-5 grid grid-cols-3 gap-3">

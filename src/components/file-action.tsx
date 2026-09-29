@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ActionLogDialog } from "@/components/action-log-dialog";
+import { TagBadges } from "@/components/tag-badges";
 import { AbandonDialog } from "@/components/abandon-dialog";
 import { useDossiers } from "@/components/providers/dossiers-provider";
 import { analyzeDossier, scoreFileAction, COURRIEL_CONFIG } from "@/lib/dossier-logic";
@@ -61,7 +62,7 @@ export function FileAction({
 }) {
   const router = useRouter();
   const now = useNow();
-  const { addAction, claimDossier, abandonDossier, currentProfile, fetchAllActions, updateCourrielNiveau } =
+  const { addAction, claimDossier, abandonDossier, currentProfile, fetchAllActions, updateCourrielNiveau, analyzeCtx } =
     useDossiers();
   const [actionDossier, setActionDossier] = useState<Dossier | null>(null);
   const [abandonDossierTarget, setAbandonDossierTarget] = useState<Dossier | null>(null);
@@ -106,10 +107,10 @@ export function FileAction({
   const allItems = useMemo(() => {
     let list = dossiers
       .filter((d) => d.etape === "paiement")
-      .map((d) => ({ d, a: analyzeDossier(d, now) }));
+      .map((d) => ({ d, a: analyzeDossier(d, now, analyzeCtx) }));
     if (onlyAlerts) list = list.filter((x) => x.a.alert);
     return list;
-  }, [dossiers, now, onlyAlerts]);
+  }, [dossiers, now, onlyAlerts, analyzeCtx]);
 
   function toggleChip(chip: Chip) {
     setActiveChips((prev) => {
@@ -362,6 +363,7 @@ export function FileAction({
                           Non affecté
                         </span>
                       )}
+                      <TagBadges d={d} />
                       {d.ville && (
                         <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10.5px] font-semibold text-ink-2">
                           {d.ville}

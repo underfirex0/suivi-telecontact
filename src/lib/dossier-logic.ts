@@ -1,29 +1,60 @@
 import { differenceInCalendarDays, differenceInMinutes, parseISO, addHours, addDays } from "date-fns";
-import type { Dossier, DossierStatus, JuridiqueEtape } from "./types";
+import type { Dossier, DossierStatus, JuridiqueEtape, Edition, Societe } from "./types";
 
 /**
  * Seuils métier :
- * - Référencement : effectif 24h EXACTES après la création du dossier
- * - QC en retard : 2 jours après le référencement sans QC faite
+ * - Référencement WEB Telecontact : effectif 24h EXACTES après la création du dossier
+ * - QC en retard : 2 jours après le référencement (web) ou après la création (papier, Kompass)
  * - Suivi juridique : DÉCISION HUMAINE UNIQUEMENT — plus d'escalade automatique
  *   par nombre de jours. Une seule personne doit décider de l'activer.
- * - Niveaux de risque (remplace l'ancien système par jours) : basés uniquement
- *   sur l'écart entre le % de visibilité déjà consommée et le % déjà payé.
- *   Exemple : 0% payé → Niveau 1 dès 20% de temps consommé. 30% payé →
- *   Niveau 1 seulement à partir de 50% de temps consommé (écart de 20 points
- *   dans les deux cas). Niveau 2 = écart ≥ 35 points. Niveau 3 = écart ≥ 50
- *   points (signal fort — proche du seuil de perte réelle à 100%).
- * - Perte totale vs récupérable : si moins de 10% du montant facturé a été
- *   réglé au moment où la visibilité expire, on considère que le dossier
- *   n'a jamais vraiment généré de paiement ("perte totale" — probablement
- *   irrécupérable). Au-delà de 10%, un vrai montant reste en jeu
- *   ("perte partielle récupérable" — encore à réclamer).
+ * - Niveaux de risque, cas général (web avec suivi de visibilité) : basés sur l'écart
+ *   entre le % de visibilité consommée et le % payé.
+ *   Niveau 1 = écart ≥ 20 points, Niveau 2 = écart ≥ 35, Niveau 3 = écart ≥ 50.
+ * - Niveaux de risque, SANS suivi de visibilité (papier, Kompass internet) : basés
+ *   sur l'ancienneté de la facture impayée — 15 jours / 25 jours / 90 jours.
+ *   (Sans cette règle, ces dossiers n'escaladeraient jamais : il n'y a pas d'horloge
+ *   de visibilité à comparer au montant payé.)
+ * - Perte totale vs récupérable : uniquement quand une visibilité existe et est
+ *   expirée. Moins de 10% payé → "perte totale"; au-delà → "perte partielle".
+ * - PAPIER : la facture part quand l'annuaire sort en vente. Tant que la date de
+ *   sortie de l'édition n'est pas atteinte → "En attente de parution". Dès qu'elle
+ *   est atteinte et que le dossier n'est pas facturé → alerte "Annuaire sorti — à facturer".
  */
 export const SEUIL_QC_RETARD_JOURS = 2;
 export const SEUIL_NIVEAU_1_ECART_POINTS = 20;
 export const SEUIL_NIVEAU_2_ECART_POINTS = 35;
 export const SEUIL_NIVEAU_3_ECART_POINTS = 50;
+export const SEUIL_JOURS_NIVEAU_1 = 15;
+export const SEUIL_JOURS_NIVEAU_2 = 25;
+export const SEUIL_JOURS_NIVEAU_3 = 90;
 export const SEUIL_PERTE_TOTALE_PCT_PAYE = 10;
+/** Après combien de jours de retard de facturation papier l'alerte passe en rouge. */
+export const SEUIL_PAPIER_FACTURE_URGENTE_JOURS = 7;
+
+/**
+ * Contexte nécessaire à l'analyse : les éditions (pour la date de sortie de
+ * l'annuaire papier). Paramètre OBLIGATOIRE de analyzeDossier — ainsi le compilateur
+ * signale tout endroit qui l'oublierait (un oubli donnerait des statuts papier faux).
+ */
+export interface AnalyzeContext {
+  editions: Edition[];
+}
+
+export const EMPTY_ANALYZE_CONTEXT: AnalyzeContext = { editions: [] };
+
+export function findEdition(
+  ctx: AnalyzeContext,
+  societe: Societe,
+  numero: number | null
+): Edition | undefined {
+  if (numero == null) return undefined;
+  return ctx.editions.find((e) => e.societe === societe && e.numero === numero);
+}
+
+/** Le délai de 24h "référencement web" ne concerne que Telecontact Internet. */
+export function usesReferencementDelay(d: Pick<Dossier, "societe" | "support">): boolean {
+  return d.societe === "telecontact" && d.support === "internet";
+}
 
 /** Référencement = 24h exactes après la création du dossier (created_at). */
 export function dateReferencement(createdAt: string): Date {
@@ -46,6 +77,7 @@ function noVisibiliteFields(joursSansAction: number | null = null) {
     pctPaye: null as number | null,
     desyncRisque: false,
     niveau: 0 as 0 | 1 | 2 | 3,
+    niveauBase: null as "ecart" | "jours" | null,
     promesseRompue: false,
     rappelDu: false,
     joursSansAction,
@@ -67,7 +99,7 @@ function rappelDuDe(d: Dossier, now: Date): boolean {
 }
 
 /** Niveau 0-3 basé sur l'écart entre % temps consommé et % payé. */
-function niveauDe(gap: number | null): 0 | 1 | 2 | 3 {
+export function niveauDe(gap: number | null): 0 | 1 | 2 | 3 {
   if (gap == null) return 0;
   if (gap >= SEUIL_NIVEAU_3_ECART_POINTS) return 3;
   if (gap >= SEUIL_NIVEAU_2_ECART_POINTS) return 2;
@@ -75,7 +107,15 @@ function niveauDe(gap: number | null): 0 | 1 | 2 | 3 {
   return 0;
 }
 
-export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatus {
+/** Niveau 0-3 basé sur l'ancienneté de la facture impayée (dossiers sans suivi de visibilité). */
+export function niveauParJours(jours: number): 0 | 1 | 2 | 3 {
+  if (jours >= SEUIL_JOURS_NIVEAU_3) return 3;
+  if (jours >= SEUIL_JOURS_NIVEAU_2) return 2;
+  if (jours >= SEUIL_JOURS_NIVEAU_1) return 1;
+  return 0;
+}
+
+export function analyzeDossier(d: Dossier, now: Date, ctx: AnalyzeContext): DossierStatus {
   // --- Abandon explicite : prioritaire sur tout, un humain a décidé d'arrêter ---
   if (d.abandonne_at) {
     return {
@@ -90,10 +130,13 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
   }
 
   if (d.etape === "qc") {
-    const dateRef = dateReferencement(d.created_at);
-    const referenced = now >= dateRef;
+    const web = usesReferencementDelay(d);
+    const dateRef = web ? dateReferencement(d.created_at) : parseISO(d.created_at);
+    // Hors web Telecontact il n'y a pas de délai de référencement : le dossier est "prêt" dès sa création.
+    const referenced = web ? now >= dateRef : true;
+    const origine = web ? "référencement" : "création";
 
-    const daysSinceRef = referenced ? differenceInCalendarDays(now, dateRef) : 0;
+    const daysSinceRef = referenced ? Math.max(0, differenceInCalendarDays(now, dateRef)) : 0;
     const late = referenced && daysSinceRef >= SEUIL_QC_RETARD_JOURS;
 
     if (d.qc_sous_statut === "a_corriger") {
@@ -102,7 +145,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         sub: !referenced
           ? "Référencement en cours · en attente de nouvelle vérification"
           : late
-          ? `En retard · ${daysSinceRef}j depuis référencement`
+          ? `En retard · ${daysSinceRef}j depuis ${origine}`
           : "Corrections en cours",
         color: late ? "danger" : "warning",
         alert: late,
@@ -130,8 +173,10 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     return {
       label: "Contrôle qualité",
       sub: late
-        ? `En retard · ${daysSinceRef}j depuis référencement`
-        : "Référencé, prêt pour QC",
+        ? `En retard · ${daysSinceRef}j depuis ${origine}`
+        : web
+        ? "Référencé, prêt pour QC"
+        : "Prêt pour QC",
       color: late ? "danger" : "neutral",
       alert: late,
       severity: late ? 3 : 0,
@@ -141,6 +186,47 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
   }
 
   if (d.etape === "facturation") {
+    // --- PAPIER : la facture part quand l'annuaire sort en vente ---
+    if (d.support === "papier") {
+      const edition = findEdition(ctx, d.societe, d.edition);
+      const sortie = edition?.date_sortie_annuaire ? parseISO(edition.date_sortie_annuaire) : null;
+
+      if (!sortie) {
+        return {
+          label: "En attente de parution",
+          sub: d.edition == null ? "Édition non renseignée" : "Date de sortie de l'annuaire non définie",
+          color: "neutral",
+          alert: false,
+          severity: 0,
+          columnKey: "facturation",
+          ...noVisibiliteFields(),
+        };
+      }
+
+      const jours = differenceInCalendarDays(now, sortie); // 0 = jour de sortie, > 0 = déjà sorti
+      if (jours >= 0) {
+        const urgent = jours >= SEUIL_PAPIER_FACTURE_URGENTE_JOURS;
+        return {
+          label: "Annuaire sorti — à facturer",
+          sub: jours === 0 ? "Sorti aujourd'hui · facture à émettre" : `Sorti depuis ${jours}j · facture à émettre`,
+          color: urgent ? "danger" : "warning",
+          alert: true,
+          severity: urgent ? 3 : 2,
+          columnKey: "facturation",
+          ...noVisibiliteFields(),
+        };
+      }
+      return {
+        label: "En attente de parution",
+        sub: `Sortie de l'annuaire dans ${-jours}j`,
+        color: "neutral",
+        alert: false,
+        severity: 0,
+        columnKey: "facturation",
+        ...noVisibiliteFields(),
+      };
+    }
+
     return {
       label: "Validé — à facturer",
       sub: "QC OK, en attente de facture",
@@ -157,7 +243,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     const daysSinceFacture = differenceInCalendarDays(now, dateFacture);
     const joursSansAction = joursSansActionDe(d, now);
 
-    // --- Indicateurs de visibilité (uniquement si les dates existent) ---
+    // --- Indicateurs de visibilité (uniquement si les DEUX dates existent) ---
     let pctTemps: number | null = null;
     if (d.date_debut_visibilite && d.date_fin_visibilite) {
       const debut = parseISO(d.date_debut_visibilite);
@@ -176,10 +262,23 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     const soldeDu = d.montant_facture != null && d.montant_recu < d.montant_facture;
     const perteReelle = pctTemps !== null && pctTemps >= 100 && soldeDu;
     const perteTotale = perteReelle && (pctPaye ?? 0) < SEUIL_PERTE_TOTALE_PCT_PAYE;
-    const niveau = !perteReelle && soldeDu ? niveauDe(gap) : 0;
+
+    // Base du niveau : écart temps/payé si une visibilité existe, sinon ancienneté en jours.
+    const niveauBase: "ecart" | "jours" = pctTemps !== null ? "ecart" : "jours";
+    const niveau: 0 | 1 | 2 | 3 =
+      !perteReelle && soldeDu
+        ? niveauBase === "ecart"
+          ? niveauDe(gap)
+          : niveauParJours(daysSinceFacture)
+        : 0;
     const desyncRisque = niveau >= 1;
     const promesseRompue = !perteReelle && promesseRompueDe(d, now, soldeDu);
     const rappelDu = rappelDuDe(d, now);
+
+    const niveauSub =
+      niveauBase === "ecart"
+        ? `${Math.round(pctTemps ?? 0)}% du temps consommé, ${Math.round(pctPaye ?? 0)}% payé — écart de ${Math.round(gap ?? 0)}pts`
+        : `Impayé depuis ${daysSinceFacture}j — niveau selon l'ancienneté`;
 
     // --- Perte : priorité la plus haute, mais on distingue totale vs récupérable ---
     if (perteReelle) {
@@ -195,6 +294,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
           pctPaye,
           desyncRisque: false,
           niveau: 0,
+          niveauBase: null,
           promesseRompue: false,
           rappelDu,
           joursSansAction,
@@ -211,6 +311,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque: false,
         niveau: 0,
+        niveauBase: null,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -230,6 +331,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         niveau,
+        niveauBase,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -249,17 +351,18 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         niveau,
+        niveauBase,
         promesseRompue: true,
         rappelDu,
         joursSansAction,
       };
     }
 
-    // --- Niveaux 1/2/3 : écart croissant entre temps consommé et montant payé ---
+    // --- Niveaux 1/2/3 ---
     if (niveau === 3) {
       return {
         label: "Niveau 3",
-        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé — écart de ${Math.round(gap!)}pts`,
+        sub: niveauSub,
         color: "perte",
         alert: true,
         severity: 3.5,
@@ -268,6 +371,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         niveau,
+        niveauBase,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -276,7 +380,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     if (niveau === 2) {
       return {
         label: "Niveau 2",
-        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé — écart de ${Math.round(gap!)}pts`,
+        sub: niveauSub,
         color: "danger",
         alert: true,
         severity: 3,
@@ -285,6 +389,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         niveau,
+        niveauBase,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -293,7 +398,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
     if (niveau === 1) {
       return {
         label: "Niveau 1",
-        sub: `${Math.round(pctTemps!)}% du temps consommé, ${Math.round(pctPaye!)}% payé — écart de ${Math.round(gap!)}pts`,
+        sub: niveauSub,
         color: "warning",
         alert: true,
         severity: 2,
@@ -302,6 +407,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         niveau,
+        niveauBase,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -313,10 +419,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       const joursRetard = differenceInCalendarDays(now, parseISO(d.prochain_rappel!));
       return {
         label: "Rappel dû",
-        sub:
-          joursRetard === 0
-            ? "Rappel prévu aujourd'hui"
-            : `Rappel en retard de ${joursRetard}j`,
+        sub: joursRetard === 0 ? "Rappel prévu aujourd'hui" : `Rappel en retard de ${joursRetard}j`,
         color: "warning",
         alert: true,
         severity: 1,
@@ -325,6 +428,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
         pctPaye,
         desyncRisque,
         niveau,
+        niveauBase,
         promesseRompue: false,
         rappelDu,
         joursSansAction,
@@ -342,6 +446,7 @@ export function analyzeDossier(d: Dossier, now: Date = new Date()): DossierStatu
       pctPaye,
       desyncRisque,
       niveau,
+      niveauBase,
       promesseRompue: false,
       rappelDu,
       joursSansAction,

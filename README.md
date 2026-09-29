@@ -421,6 +421,53 @@ dossier pour avoir le contexte.
 
 ---
 
+## Sociétés, éditions, papier — la nouvelle architecture
+
+**Navigation** : une barre sous le titre des pages de suivi (Tableau de bord, Dossiers, Analytique,
+Suivi juridique, Activité) — **Société → Édition → Support**. Chaque choix affiche son nombre de
+dossiers ; les éditions terminées sont grisées ; la sélection est mémorisée. Les pages Import,
+Impayés et Opérateurs ne sont volontairement pas filtrées (fichiers / charge de travail globale).
+"Sans édition" retrouve les dossiers pas encore classés : aucun dossier ne peut devenir introuvable.
+
+**Étiquettes** : chaque dossier porte société, support et édition, **lus dans les données** des
+fichiers (colonnes STE : 3 = Telecontact / 1 = Kompass ; S : 1 = papier ; N° E = édition ;
+règlements : TEDI / NEDI). Modifiables sur la fiche dossier et à la création.
+
+**Éditions** (bouton « Éditions » de la barre) : statut En cours / Terminée et, pour le papier,
+la **date de sortie de l'annuaire**.
+
+**Papier** : la facture part quand l'annuaire sort en vente.
+`En attente de parution` → (date de sortie atteinte) `Annuaire sorti — à facturer` (alerte, rouge
+après 7 jours) → facturé → suivi du paiement à l'ancienneté.
+
+**Dossiers sans horloge de visibilité** (tout le papier + Kompass internet — leurs fichiers n'ont
+pas de dates de visibilité) : niveau de risque à l'**ancienneté de la facture** : 15 j = Niveau 1,
+25 j = Niveau 2, 90 j = Niveau 3 (`SEUIL_JOURS_NIVEAU_*` dans `dossier-logic.ts`). Le calcul par
+écart temps/payé reste inchangé pour Telecontact Internet. Sans cette règle, ces dossiers
+n'auraient jamais escaladé.
+
+**Import** : détecte société / édition / support dans les fichiers, résume « où vont ces N
+nouveaux dossiers » avant validation, comprend les fichiers papier / Kompass (33 colonnes) et les
+fichiers à plusieurs onglets. **Aucun doublon** : un règlement déjà enregistré est ignoré, seul le
+complément est ajouté — ré-importer le même fichier n'ajoute rien. Un n° de facture ne peut jamais
+être confondu entre Telecontact et Kompass.
+
+**Impayés** (page dédiée) : un impayé = un incident de paiement individuel (n° de « Dossier »). Le
+fichier fait foi pour l'argent ; **le traitement (agent, appels, visites, rappel, notes) appartient à
+l'application et n'est jamais écrasé** par un nouvel import. Un impayé qui disparaît du fichier peut
+être marqué soldé (case à cocher, visible dans l'aperçu). Ses montants ne sont jamais additionnés à
+ceux des dossiers (pas de double comptage).
+
+### Migrations (dans cet ordre)
+
+1. `supabase/migration-011-tags-editions.sql`
+2. `supabase/backfill-tags-existants.sql` — étiquette les dossiers déjà présents (édition 36 / 37…)
+3. `supabase/migration-012-impayes.sql`
+
+Toutes sont relançables sans risque.
+
+---
+
 ## Notes et limites connues
 
 - **Import historique** : pas d'import automatique des dossiers 2025/2026 pour l'instant,

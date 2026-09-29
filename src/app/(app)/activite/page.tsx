@@ -15,6 +15,8 @@ import { Topbar } from "@/components/topbar";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useDossiers } from "@/components/providers/dossiers-provider";
+import { useScope } from "@/components/providers/scope-provider";
+import { matchesScope } from "@/lib/scope";
 import { analyzeDossier } from "@/lib/dossier-logic";
 import { useNow } from "@/lib/use-now";
 import { cn, initials } from "@/lib/utils";
@@ -31,7 +33,8 @@ const TYPE_CONFIG: Record<ActionType, { label: string; icon: typeof Phone; color
 type Periode = "aujourdhui" | "semaine" | "mois" | "tout";
 
 export default function ActivitePage() {
-  const { dossiers, profiles, fetchAllActions, currentProfile } = useDossiers();
+  const { dossiers, profiles, fetchAllActions, currentProfile, analyzeCtx } = useDossiers();
+  const { scope } = useScope();
   const router = useRouter();
   const now = useNow();
 
@@ -81,16 +84,18 @@ export default function ActivitePage() {
         const dossier = dossiersById.get(act.dossier_id) ?? null;
         let estRompue = false;
         if (dossier && act.type === "promesse_paiement" && dossier.prochain_rappel === act.date_rappel) {
-          estRompue = analyzeDossier(dossier, now).promesseRompue;
+          estRompue = analyzeDossier(dossier, now, analyzeCtx).promesseRompue;
         }
         return { act, dossier, estRompue };
       })
       .filter((x) => x.dossier !== null); // ignore actions orphelines (dossier supprimé)
-  }, [actions, dossiersById, now]);
+  }, [actions, dossiersById, now, analyzeCtx]);
 
   const filtered = useMemo(() => {
     return enriched.filter(({ act, dossier, estRompue }) => {
       if (periodeStart && new Date(act.created_at) < periodeStart) return false;
+      // Seules les actions des dossiers de la sélection Société → Édition → Support
+      if (!dossier || !matchesScope(dossier, scope)) return false;
       if (operateurFilter === "moi" && act.created_by !== currentProfile?.id) return false;
       if (operateurFilter !== "all" && operateurFilter !== "moi" && act.created_by !== operateurFilter) return false;
       if (typeFilter !== "all" && act.type !== typeFilter) return false;
@@ -98,7 +103,7 @@ export default function ActivitePage() {
       if (search && !dossier!.client_nom.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [enriched, periodeStart, operateurFilter, typeFilter, onlyRompues, search, currentProfile]);
+  }, [enriched, periodeStart, operateurFilter, typeFilter, onlyRompues, search, currentProfile, scope]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -137,6 +142,7 @@ export default function ActivitePage() {
         description="Journal de toutes les actions enregistrées par l'équipe"
         search={search}
         onSearchChange={setSearch}
+        scoped
       />
       <div className="px-8 py-6">
         {/* Résumé */}

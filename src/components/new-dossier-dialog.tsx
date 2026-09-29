@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -23,7 +23,10 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { useDossiers } from "@/components/providers/dossiers-provider";
+import { useScope } from "@/components/providers/scope-provider";
+import { SOCIETES, SUPPORTS, editionTab } from "@/lib/tags";
 import { todayISO } from "@/lib/utils";
+import type { Societe, Support } from "@/lib/types";
 
 const OFFRES_SUGGESTIONS = [
   "Référencement standard",
@@ -39,8 +42,14 @@ export function NewDossierDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { createDossier, profiles } = useDossiers();
+  const { createDossier, profiles, editions } = useDossiers();
+  const { scope } = useScope();
   const router = useRouter();
+
+  // Société / support / édition : préremplis avec ce que l'on regarde en ce moment
+  const [societe, setSociete] = useState<Societe>("telecontact");
+  const [support, setSupport] = useState<Support>("internet");
+  const [editionVal, setEditionVal] = useState("none"); // "none" = sans édition
 
   const [clientNom, setClientNom] = useState("");
   const [offre, setOffre] = useState("");
@@ -51,6 +60,18 @@ export function NewDossierDialog({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setSociete(scope.societe === "all" ? "telecontact" : scope.societe);
+    setSupport(scope.support === "all" ? "internet" : scope.support);
+    setEditionVal(typeof scope.edition === "number" ? String(scope.edition) : "none");
+  }, [open, scope]);
+
+  const editionsDeLaSociete = editions
+    .filter((e) => e.societe === societe)
+    .map((e) => e.numero)
+    .sort((x, y) => y - x);
 
   function reset() {
     setClientNom("");
@@ -81,6 +102,9 @@ export function NewDossierDialog({
       date_bc: dateBc,
       operateur_id: operateurId || null,
       notes: notes.trim() || null,
+      societe,
+      support,
+      edition: editionVal === "none" ? null : Number(editionVal),
     });
     setSaving(false);
     if (id) {
@@ -109,6 +133,62 @@ export function NewDossierDialog({
                 onChange={(e) => setClientNom(e.target.value)}
                 placeholder="ex: Société Atlas SARL"
               />
+            </div>
+            <div className="col-span-2 grid grid-cols-3 gap-4 rounded-xl bg-surface-2 p-3.5">
+              <div>
+                <Label>Société</Label>
+                <Select
+                  value={societe}
+                  onValueChange={(v) => {
+                    const nouvelle = v as Societe;
+                    setSociete(nouvelle);
+                    const existe = editions.some((e) => e.societe === nouvelle && String(e.numero) === editionVal);
+                    if (!existe) setEditionVal("none");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOCIETES.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Support</Label>
+                <Select value={support} onValueChange={(v) => setSupport(v as Support)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTS.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Édition</Label>
+                <Select value={editionVal} onValueChange={setEditionVal}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sans édition</SelectItem>
+                    {editionsDeLaSociete.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {editionTab(n)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
               <Label htmlFor="offre">Offre / référencement</Label>

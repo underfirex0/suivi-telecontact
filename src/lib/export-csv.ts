@@ -1,4 +1,5 @@
-import { analyzeDossier } from "./dossier-logic";
+import { analyzeDossier, type AnalyzeContext } from "./dossier-logic";
+import { SOCIETE_LABELS, SUPPORT_LABELS } from "./tags";
 import { formatMontant } from "./utils";
 import type { Dossier, Profile } from "./types";
 
@@ -9,12 +10,15 @@ function csvEscape(value: string): string {
   return value;
 }
 
-export function exportDossiersToCsv(dossiers: Dossier[], profiles: Profile[]) {
+export function exportDossiersToCsv(dossiers: Dossier[], profiles: Profile[], ctx: AnalyzeContext) {
   const profileMap = new Map(profiles.map((p) => [p.id, p.full_name]));
   const now = new Date();
 
   const headers = [
     "Client",
+    "Société",
+    "Édition",
+    "Support",
     "Offre",
     "Ville",
     "Contact client",
@@ -41,9 +45,12 @@ export function exportDossiersToCsv(dossiers: Dossier[], profiles: Profile[]) {
   ];
 
   const rows = dossiers.map((d) => {
-    const a = analyzeDossier(d, now);
+    const a = analyzeDossier(d, now, ctx);
     return [
       d.client_nom,
+      SOCIETE_LABELS[d.societe],
+      d.edition != null ? String(d.edition) : "",
+      SUPPORT_LABELS[d.support],
       d.offre ?? "",
       d.ville ?? "",
       d.contact_client ?? "",
